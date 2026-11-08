@@ -1,0 +1,91 @@
+// RFC 6733 base protocol: dictionary, shared grouped AVPs, CER.
+syntax = "proto3";
+
+package spike.base;
+
+import "diam/options.proto";
+
+option go_package = "github.com/hsdfat/go-diam/spike/base";
+
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  USER_NAME = 1 [(diam.def) = {m: true, type: UTF8_STRING}];
+  PROXY_STATE = 33 [(diam.def) = {m: true, type: OCTET_STRING}];
+  EVENT_TIMESTAMP = 55 [(diam.def) = {m: true, type: TIME}];
+  HOST_IP_ADDRESS = 257 [(diam.def) = {m: true, type: ADDRESS}];
+  AUTH_APPLICATION_ID = 258 [(diam.def) = {m: true, type: UNSIGNED32}];
+  ACCT_APPLICATION_ID = 259 [(diam.def) = {m: true, type: UNSIGNED32}];
+  VENDOR_SPECIFIC_APPLICATION_ID = 260 [(diam.def) = {m: true, type: GROUPED}];
+  SESSION_ID = 263 [(diam.def) = {m: true, type: UTF8_STRING}];
+  ORIGIN_HOST = 264 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  SUPPORTED_VENDOR_ID = 265 [(diam.def) = {m: true, type: UNSIGNED32}];
+  VENDOR_ID = 266 [(diam.def) = {m: true, type: UNSIGNED32}];
+  FIRMWARE_REVISION = 267 [(diam.def) = {type: UNSIGNED32}];
+  RESULT_CODE = 268 [(diam.def) = {m: true, type: UNSIGNED32}];
+  PRODUCT_NAME = 269 [(diam.def) = {type: UTF8_STRING}];
+  AUTH_SESSION_STATE = 277 [(diam.def) = {m: true, type: ENUMERATED}];
+  ORIGIN_STATE_ID = 278 [(diam.def) = {m: true, type: UNSIGNED32}];
+  FAILED_AVP = 279 [(diam.def) = {m: true, type: GROUPED}];
+  PROXY_HOST = 280 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  ERROR_MESSAGE = 281 [(diam.def) = {type: UTF8_STRING}];
+  ROUTE_RECORD = 282 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  DESTINATION_REALM = 283 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  PROXY_INFO = 284 [(diam.def) = {m: true, type: GROUPED}];
+  DESTINATION_HOST = 293 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  ORIGIN_REALM = 296 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  EXPERIMENTAL_RESULT = 297 [(diam.def) = {m: true, type: GROUPED}];
+  EXPERIMENTAL_RESULT_CODE = 298 [(diam.def) = {m: true, type: UNSIGNED32}];
+}
+
+enum AuthSessionState {
+  AUTH_SESSION_STATE_STATE_MAINTAINED = 0;
+  AUTH_SESSION_STATE_NO_STATE_MAINTAINED = 1;
+}
+
+// Proxy-Info ::= < AVP Header: 284 > { Proxy-Host } { Proxy-State } *[ AVP ]
+message ProxyInfo {
+  option (diam.extensible) = true;
+  string proxy_host = 1;
+  bytes proxy_state = 2;
+}
+
+// Vendor-Specific-Application-Id ::= < AVP Header: 260 >
+//   { Vendor-Id } [ Auth-Application-Id ] [ Acct-Application-Id ]
+message VendorSpecificApplicationId {
+  uint32 vendor_id = 1;
+  optional uint32 auth_application_id = 2;
+  optional uint32 acct_application_id = 3;
+}
+
+// Experimental-Result ::= < AVP Header: 297 > { Vendor-Id } { Experimental-Result-Code }
+message ExperimentalResult {
+  uint32 vendor_id = 1;
+  uint32 experimental_result_code = 2;
+}
+
+// Failed-AVP ::= < AVP Header: 279 > 1* {AVP}
+message FailedAvp {
+  option (diam.extensible) = true;
+}
+
+// CER ::= < Diameter Header: 257, REQ >
+//   { Origin-Host } { Origin-Realm } 1* { Host-IP-Address } { Vendor-Id }
+//   { Product-Name } [ Origin-State-Id ] * [ Supported-Vendor-Id ]
+//   * [ Auth-Application-Id ] * [ Acct-Application-Id ]
+//   * [ Vendor-Specific-Application-Id ] [ Firmware-Revision ] * [ AVP ]
+message CapabilitiesExchangeRequest {
+  option (diam.command) = {code: 257, app_id: 0, request: true};
+  option (diam.extensible) = true;
+  string origin_host = 1;
+  string origin_realm = 2;
+  repeated bytes host_ip_address = 3 [(diam.min) = 1];
+  uint32 vendor_id = 4;
+  string product_name = 5;
+  optional uint32 origin_state_id = 6;
+  repeated uint32 supported_vendor_id = 7;
+  repeated uint32 auth_application_id = 8;
+  repeated uint32 acct_application_id = 9;
+  repeated VendorSpecificApplicationId vendor_specific_application_id = 10;
+  optional uint32 firmware_revision = 11;
+}

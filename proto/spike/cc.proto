@@ -1,0 +1,153 @@
+// RFC 8506 Diameter Credit-Control (subset for the spike): CCR/CCA.
+syntax = "proto3";
+
+package spike.cc;
+
+import "diam/options.proto";
+import "spike/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/spike/cc";
+
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  CC_INPUT_OCTETS = 412 [(diam.def) = {m: true, type: UNSIGNED64}];
+  CC_MONEY = 413 [(diam.def) = {m: true, type: GROUPED}];
+  CC_OUTPUT_OCTETS = 414 [(diam.def) = {m: true, type: UNSIGNED64}];
+  CC_REQUEST_NUMBER = 415 [(diam.def) = {m: true, type: UNSIGNED32}];
+  CC_REQUEST_TYPE = 416 [(diam.def) = {m: true, type: ENUMERATED}];
+  CC_TIME = 420 [(diam.def) = {m: true, type: UNSIGNED32}];
+  CC_TOTAL_OCTETS = 421 [(diam.def) = {m: true, type: UNSIGNED64}];
+  CURRENCY_CODE = 425 [(diam.def) = {m: true, type: UNSIGNED32}];
+  EXPONENT = 429 [(diam.def) = {m: true, type: INTEGER32}];
+  GRANTED_SERVICE_UNIT = 431 [(diam.def) = {m: true, type: GROUPED}];
+  RATING_GROUP = 432 [(diam.def) = {m: true, type: UNSIGNED32}];
+  REQUESTED_SERVICE_UNIT = 437 [(diam.def) = {m: true, type: GROUPED}];
+  SERVICE_IDENTIFIER = 439 [(diam.def) = {m: true, type: UNSIGNED32}];
+  SUBSCRIPTION_ID = 443 [(diam.def) = {m: true, type: GROUPED}];
+  SUBSCRIPTION_ID_DATA = 444 [(diam.def) = {m: true, type: UTF8_STRING}];
+  UNIT_VALUE = 445 [(diam.def) = {m: true, type: GROUPED}];
+  USED_SERVICE_UNIT = 446 [(diam.def) = {m: true, type: GROUPED}];
+  VALUE_DIGITS = 447 [(diam.def) = {m: true, type: INTEGER64}];
+  VALIDITY_TIME = 448 [(diam.def) = {m: true, type: UNSIGNED32}];
+  SUBSCRIPTION_ID_TYPE = 450 [(diam.def) = {m: true, type: ENUMERATED}];
+  MULTIPLE_SERVICES_INDICATOR = 455 [(diam.def) = {m: true, type: ENUMERATED}];
+  MULTIPLE_SERVICES_CREDIT_CONTROL = 456 [(diam.def) = {m: true, type: GROUPED}];
+  SERVICE_CONTEXT_ID = 461 [(diam.def) = {m: true, type: UTF8_STRING}];
+}
+
+// CC-Request-Type has no value 0; proto3 forces one, the generator drops *_UNSPECIFIED.
+enum CcRequestType {
+  CC_REQUEST_TYPE_UNSPECIFIED = 0;
+  CC_REQUEST_TYPE_INITIAL_REQUEST = 1;
+  CC_REQUEST_TYPE_UPDATE_REQUEST = 2;
+  CC_REQUEST_TYPE_TERMINATION_REQUEST = 3;
+  CC_REQUEST_TYPE_EVENT_REQUEST = 4;
+}
+
+enum SubscriptionIdType {
+  SUBSCRIPTION_ID_TYPE_END_USER_E164 = 0;
+  SUBSCRIPTION_ID_TYPE_END_USER_IMSI = 1;
+  SUBSCRIPTION_ID_TYPE_END_USER_SIP_URI = 2;
+  SUBSCRIPTION_ID_TYPE_END_USER_NAI = 3;
+  SUBSCRIPTION_ID_TYPE_END_USER_PRIVATE = 4;
+}
+
+enum MultipleServicesIndicator {
+  MULTIPLE_SERVICES_INDICATOR_MULTIPLE_SERVICES_NOT_SUPPORTED = 0;
+  MULTIPLE_SERVICES_INDICATOR_MULTIPLE_SERVICES_SUPPORTED = 1;
+}
+
+// Subscription-Id ::= < AVP Header: 443 > { Subscription-Id-Type } { Subscription-Id-Data }
+message SubscriptionId {
+  SubscriptionIdType subscription_id_type = 1;
+  string subscription_id_data = 2;
+}
+
+// Unit-Value ::= < AVP Header: 445 > { Value-Digits } [ Exponent ]
+message UnitValue {
+  int64 value_digits = 1;
+  optional int32 exponent = 2;
+}
+
+// CC-Money ::= < AVP Header: 413 > { Unit-Value } [ Currency-Code ]
+message CcMoney {
+  UnitValue unit_value = 1;
+  optional uint32 currency_code = 2;
+}
+
+// Granted/Requested/Used-Service-Unit share one shape; the AVP code comes from the field.
+// *-Service-Unit ::= [ CC-Time ] [ CC-Money ] [ CC-Total-Octets ]
+//   [ CC-Input-Octets ] [ CC-Output-Octets ] ... *[ AVP ]
+message ServiceUnit {
+  option (diam.extensible) = true;
+  optional uint32 cc_time = 1;
+  optional CcMoney cc_money = 2;
+  optional uint64 cc_total_octets = 3;
+  optional uint64 cc_input_octets = 4;
+  optional uint64 cc_output_octets = 5;
+}
+
+// Multiple-Services-Credit-Control ::= < AVP Header: 456 >
+//   [ Granted-Service-Unit ] [ Requested-Service-Unit ] *[ Used-Service-Unit ]
+//   *[ Service-Identifier ] [ Rating-Group ] ... [ Validity-Time ] [ Result-Code ] ... *[ AVP ]
+message MultipleServicesCreditControl {
+  option (diam.extensible) = true;
+  optional ServiceUnit granted_service_unit = 1;
+  optional ServiceUnit requested_service_unit = 2;
+  repeated ServiceUnit used_service_unit = 3;
+  repeated uint32 service_identifier = 4;
+  optional uint32 rating_group = 5;
+  optional uint32 validity_time = 6;
+  optional uint32 result_code = 7;
+}
+
+// CCR ::= < Diameter Header: 272, REQ, PXY >
+//   < Session-Id > { Origin-Host } { Origin-Realm } { Destination-Realm }
+//   { Auth-Application-Id } { Service-Context-Id } { CC-Request-Type }
+//   { CC-Request-Number } [ Destination-Host ] [ User-Name ] [ Origin-State-Id ]
+//   [ Event-Timestamp ] *[ Subscription-Id ] [ Multiple-Services-Indicator ]
+//   *[ Multiple-Services-Credit-Control ] ... *[ Proxy-Info ] *[ Route-Record ] *[ AVP ]
+message CreditControlRequest {
+  option (diam.command) = {code: 272, app_id: 4, request: true, proxiable: true};
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  string origin_host = 2;
+  string origin_realm = 3;
+  string destination_realm = 4;
+  uint32 auth_application_id = 5;
+  string service_context_id = 6;
+  CcRequestType cc_request_type = 7;
+  uint32 cc_request_number = 8;
+  optional string destination_host = 9;
+  optional string user_name = 10;
+  optional uint32 origin_state_id = 11;
+  optional uint32 event_timestamp = 12;
+  repeated SubscriptionId subscription_id = 13;
+  optional MultipleServicesIndicator multiple_services_indicator = 14;
+  repeated MultipleServicesCreditControl multiple_services_credit_control = 15;
+  repeated spike.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// CCA ::= < Diameter Header: 272, PXY >
+//   < Session-Id > { Result-Code } { Origin-Host } { Origin-Realm }
+//   { Auth-Application-Id } { CC-Request-Type } { CC-Request-Number }
+//   ... *[ Multiple-Services-Credit-Control ] ... [ Event-Timestamp ] ...
+//   *[ Failed-AVP ] *[ Proxy-Info ] *[ Route-Record ] *[ AVP ]
+message CreditControlAnswer {
+  option (diam.command) = {code: 272, app_id: 4, proxiable: true};
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  uint32 result_code = 2;
+  string origin_host = 3;
+  string origin_realm = 4;
+  uint32 auth_application_id = 5;
+  CcRequestType cc_request_type = 6;
+  uint32 cc_request_number = 7;
+  repeated MultipleServicesCreditControl multiple_services_credit_control = 8;
+  optional uint32 event_timestamp = 9;
+  repeated spike.base.FailedAvp failed_avp = 10;
+  repeated spike.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}

@@ -1,0 +1,5 @@
+version: v2
+plugins:
+  - local: /tmp/claude-1000/-home-phatlc-data-opensource/15753449-7f8c-4f07-a3d5-bfc217b4a229/scratchpad/protoc-gen-go-diam
+    out: .
+    opt: module=github.com/hsdfat/go-diam

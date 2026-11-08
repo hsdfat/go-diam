@@ -1,0 +1,137 @@
+// 3GPP TS 29.272 S6a/S6d (subset for the spike): ULR/ULA.
+syntax = "proto3";
+
+package spike.s6a;
+
+import "diam/options.proto";
+import "spike/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/spike/s6a";
+
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  MAX_REQUESTED_BANDWIDTH_DL = 515 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MAX_REQUESTED_BANDWIDTH_UL = 516 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  MSISDN = 701 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  RAT_TYPE = 1032 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  SUBSCRIPTION_DATA = 1400 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TERMINAL_INFORMATION = 1401 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  IMEI = 1402 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  SOFTWARE_VERSION = 1403 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  ULR_FLAGS = 1405 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ULA_FLAGS = 1406 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  VISITED_PLMN_ID = 1407 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SUBSCRIBER_STATUS = 1424 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  AMBR = 1435 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  UE_SRVCC_CAPABILITY = 1615 [(diam.def) = {vendor: 10415, type: ENUMERATED, since: "Rel-9"}];
+}
+
+enum RatType {
+  RAT_TYPE_WLAN = 0;
+  RAT_TYPE_VIRTUAL = 1;
+  RAT_TYPE_UTRAN = 1000;
+  RAT_TYPE_GERAN = 1001;
+  RAT_TYPE_GAN = 1002;
+  RAT_TYPE_HSPA_EVOLUTION = 1003;
+  RAT_TYPE_EUTRAN = 1004;
+  RAT_TYPE_EUTRAN_NB_IOT = 1005;
+  RAT_TYPE_NR = 1009;
+}
+
+enum SubscriberStatus {
+  SUBSCRIBER_STATUS_SERVICE_GRANTED = 0;
+  SUBSCRIBER_STATUS_OPERATOR_DETERMINED_BARRING = 1;
+}
+
+enum UeSrvccCapability {
+  UE_SRVCC_CAPABILITY_UE_SRVCC_NOT_SUPPORTED = 0;
+  UE_SRVCC_CAPABILITY_UE_SRVCC_SUPPORTED = 1;
+}
+
+// Supported-Features ::= < AVP header: 628 10415 >
+//   { Vendor-Id } { Feature-List-ID } { Feature-List } *[ AVP ]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// Terminal-Information ::= < AVP header: 1401 10415 >
+//   [ IMEI ] [ 3GPP2-MEID ] [ Software-Version ] *[ AVP ]
+message TerminalInformation {
+  option (diam.extensible) = true;
+  optional string imei = 1;
+  optional string software_version = 2;
+}
+
+// AMBR ::= < AVP header: 1435 10415 >
+//   { Max-Requested-Bandwidth-UL } { Max-Requested-Bandwidth-DL } *[ AVP ]
+message Ambr {
+  option (diam.extensible) = true;
+  uint32 max_requested_bandwidth_ul = 1;
+  uint32 max_requested_bandwidth_dl = 2;
+}
+
+// Subscription-Data (subset) ::= < AVP header: 1400 10415 >
+//   [ Subscriber-Status ] [ MSISDN ] ... [ AMBR ] ... *[ AVP ]
+message SubscriptionData {
+  option (diam.extensible) = true;
+  optional SubscriberStatus subscriber_status = 1;
+  optional bytes msisdn = 2;
+  optional Ambr ambr = 3;
+}
+
+// ULR ::= < Diameter Header: 316, REQ, PXY, 16777251 >
+//   < Session-Id > [ DRMP ] [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State } { Origin-Host } { Origin-Realm } [ Destination-Host ]
+//   { Destination-Realm } { User-Name } *[ Supported-Features ]
+//   [ Terminal-Information ] { RAT-Type } { ULR-Flags } [ UE-SRVCC-Capability ]
+//   { Visited-PLMN-Id } ... *[ AVP ] *[ Proxy-Info ] *[ Route-Record ]
+message UpdateLocationRequest {
+  option (diam.command) = {code: 316, app_id: 16777251, request: true, proxiable: true};
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional spike.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  spike.base.AuthSessionState auth_session_state = 3;
+  string origin_host = 4;
+  string origin_realm = 5;
+  optional string destination_host = 6;
+  string destination_realm = 7;
+  string user_name = 8;
+  repeated SupportedFeatures supported_features = 9;
+  optional TerminalInformation terminal_information = 10;
+  RatType rat_type = 11;
+  uint32 ulr_flags = 12;
+  optional UeSrvccCapability ue_srvcc_capability = 13;
+  bytes visited_plmn_id = 14;
+  repeated spike.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// ULA ::= < Diameter Header: 316, PXY, 16777251 >
+//   < Session-Id > [ DRMP ] [ Vendor-Specific-Application-Id ] [ Result-Code ]
+//   [ Experimental-Result ] [ Error-Diagnostic ] { Auth-Session-State }
+//   { Origin-Host } { Origin-Realm } *[ Supported-Features ] [ ULA-Flags ]
+//   [ Subscription-Data ] ... *[ AVP ] [ Failed-AVP ] *[ Proxy-Info ] *[ Route-Record ]
+message UpdateLocationAnswer {
+  option (diam.command) = {code: 316, app_id: 16777251, proxiable: true};
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional spike.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  optional uint32 result_code = 3;
+  optional spike.base.ExperimentalResult experimental_result = 4;
+  spike.base.AuthSessionState auth_session_state = 5;
+  string origin_host = 6;
+  string origin_realm = 7;
+  repeated SupportedFeatures supported_features = 8;
+  optional uint32 ula_flags = 9;
+  optional SubscriptionData subscription_data = 10;
+  optional spike.base.FailedAvp failed_avp = 11;
+  repeated spike.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
