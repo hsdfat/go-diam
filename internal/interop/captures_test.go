@@ -24,8 +24,7 @@ func TestCaptures(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(frames) == 0 {
-		t.Log("no captures committed yet; run the peer workflow and commit its artifact")
-		return
+		t.Skip("no captures committed yet; run the peer workflow and commit its artifact")
 	}
 	dirs := map[string]bool{}
 	for _, path := range frames {

@@ -32,12 +32,32 @@ func (d avpDef) label() string {
 
 // dict holds every dictionary entry of every file in the request.
 type dict struct {
-	byName  map[string][]avpDef
-	visible map[string]map[string]bool // file path -> itself and its transitive imports
+	byName   map[string][]avpDef
+	visible  map[string]map[string]bool // file path -> itself and its transitive imports
+	commands map[commandKey]string      // commands generated so far, by full message name
+}
+
+// commandKey is what diam.Register keys a command on.
+type commandKey struct {
+	app, code uint32
+	request   bool
 }
 
 func newDict() *dict {
-	return &dict{byName: map[string][]avpDef{}, visible: map[string]map[string]bool{}}
+	return &dict{byName: map[string][]avpDef{}, visible: map[string]map[string]bool{}, commands: map[commandKey]string{}}
+}
+
+// claim records a command and fails when another message of this run already
+// has the same application, code and R-bit: both would register with the
+// runtime and the second registration panics at program start.
+func (d *dict) claim(m *message) error {
+	k := commandKey{m.cmd.GetAppId(), m.cmd.GetCode(), m.cmd.GetRequest()}
+	name := string(m.msg.Desc.FullName())
+	if other, dup := d.commands[k]; dup {
+		return fmt.Errorf("%s and %s are the same command (application %d, code %d, request=%v)", other, name, k.app, k.code, k.request)
+	}
+	d.commands[k] = name
+	return nil
 }
 
 // scope returns the files whose dictionaries f may use: f and everything it

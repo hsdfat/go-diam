@@ -90,6 +90,12 @@ func allowList(t *testing.T) map[string]string {
 	return out
 }
 
+// dictName turns a specification AVP name into the form dictionary entries
+// use: "Origin-State-Id" -> "ORIGIN_STATE_ID".
+func dictName(name string) string {
+	return strings.ToUpper(strings.NewReplacer("-", "_", " ", "_").Replace(name))
+}
+
 // fiorixAVP finds an AVP by exact code and vendor in any application of
 // go-diameter's default dictionary.
 func fiorixAVP(code, vendor uint32) *dict.AVP {
@@ -140,6 +146,11 @@ func TestDictionaryAgreesWithGoDiameter(t *testing.T) {
 						return
 					}
 					t.Errorf("%s %s (code %d vendor %d): %s", file.GetName(), v.GetName(), code, vendor, msg)
+				}
+				// Looked up by code, so the name is the independent check of
+				// the code itself: a wrong code lands on another AVP.
+				if got := dictName(theirs.Name); got != v.GetName() {
+					report("name", fmt.Sprintf("go-diameter calls this code %s (%s)", theirs.Name, got))
 				}
 				if theirs.VendorID != vendor {
 					report("vendor", fmt.Sprintf("vendor %d, go-diameter has %d", vendor, theirs.VendorID))

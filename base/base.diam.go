@@ -275,11 +275,13 @@ func (m *ProxyInfo) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *ProxyInfo) DecodeAVPs(data []byte) error {
+	*m = ProxyInfo{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -381,11 +383,13 @@ func (m *VendorSpecificApplicationId) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *VendorSpecificApplicationId) DecodeAVPs(data []byte) error {
+	*m = VendorSpecificApplicationId{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -502,11 +506,13 @@ func (m *ExperimentalResult) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *ExperimentalResult) DecodeAVPs(data []byte) error {
+	*m = ExperimentalResult{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -603,11 +609,13 @@ func (m *FailedAvp) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *FailedAvp) DecodeAVPs(data []byte) error {
+	*m = FailedAvp{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -726,11 +734,14 @@ func (m *CapabilitiesExchangeRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *CapabilitiesExchangeRequest) DecodeAVPs(data []byte) error {
+	*m = CapabilitiesExchangeRequest{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -939,7 +950,7 @@ func (m *CapabilitiesExchangeRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = CapabilitiesExchangeRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -1064,11 +1075,14 @@ func (m *CapabilitiesExchangeAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *CapabilitiesExchangeAnswer) DecodeAVPs(data []byte) error {
+	*m = CapabilitiesExchangeAnswer{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -1324,7 +1338,7 @@ func (m *CapabilitiesExchangeAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = CapabilitiesExchangeAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -1371,11 +1385,14 @@ func (m *DeviceWatchdogRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *DeviceWatchdogRequest) DecodeAVPs(data []byte) error {
+	*m = DeviceWatchdogRequest{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -1476,7 +1493,7 @@ func (m *DeviceWatchdogRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = DeviceWatchdogRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -1542,11 +1559,14 @@ func (m *DeviceWatchdogAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *DeviceWatchdogAnswer) DecodeAVPs(data []byte) error {
+	*m = DeviceWatchdogAnswer{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -1694,7 +1714,7 @@ func (m *DeviceWatchdogAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = DeviceWatchdogAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -1739,11 +1759,14 @@ func (m *DisconnectPeerRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *DisconnectPeerRequest) DecodeAVPs(data []byte) error {
+	*m = DisconnectPeerRequest{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -1848,7 +1871,7 @@ func (m *DisconnectPeerRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = DisconnectPeerRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -1907,11 +1930,14 @@ func (m *DisconnectPeerAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *DisconnectPeerAnswer) DecodeAVPs(data []byte) error {
+	*m = DisconnectPeerAnswer{Header: m.Header}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -2044,7 +2070,7 @@ func (m *DisconnectPeerAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = DisconnectPeerAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -2138,11 +2164,14 @@ func (m *ReAuthRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *ReAuthRequest) DecodeAVPs(data []byte) error {
+	*m = ReAuthRequest{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -2349,7 +2378,7 @@ func (m *ReAuthRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = ReAuthRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -2463,11 +2492,14 @@ func (m *ReAuthAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *ReAuthAnswer) DecodeAVPs(data []byte) error {
+	*m = ReAuthAnswer{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -2697,7 +2729,7 @@ func (m *ReAuthAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = ReAuthAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -2800,11 +2832,14 @@ func (m *SessionTerminationRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *SessionTerminationRequest) DecodeAVPs(data []byte) error {
+	*m = SessionTerminationRequest{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -3010,7 +3045,7 @@ func (m *SessionTerminationRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = SessionTerminationRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -3131,11 +3166,14 @@ func (m *SessionTerminationAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *SessionTerminationAnswer) DecodeAVPs(data []byte) error {
+	*m = SessionTerminationAnswer{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -3368,7 +3406,7 @@ func (m *SessionTerminationAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = SessionTerminationAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -3457,11 +3495,14 @@ func (m *AbortSessionRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *AbortSessionRequest) DecodeAVPs(data []byte) error {
+	*m = AbortSessionRequest{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -3649,7 +3690,7 @@ func (m *AbortSessionRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = AbortSessionRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 
@@ -3763,11 +3804,14 @@ func (m *AbortSessionAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *AbortSessionAnswer) DecodeAVPs(data []byte) error {
+	*m = AbortSessionAnswer{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -3997,7 +4041,7 @@ func (m *AbortSessionAnswer) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = AbortSessionAnswer{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 

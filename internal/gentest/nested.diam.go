@@ -58,11 +58,13 @@ func (m *Middle) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *Middle) DecodeAVPs(data []byte) error {
+	*m = Middle{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -179,11 +181,13 @@ func (m *Outer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *Outer) DecodeAVPs(data []byte) error {
+	*m = Outer{}
 	m.decoded = true
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
@@ -290,11 +294,14 @@ func (m *NestedRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// DecodeAVPs replaces the AVPs of m with those of an AVP sequence; the
+// Header is kept.
+// It fails only when the sequence
 // itself cannot be split into AVPs. AVPs that the grammar does not describe
 // go to Unknown; a value that cannot be decoded and an occurrence beyond a
 // maximum are skipped and reported by Validate.
 func (m *NestedRequest) DecodeAVPs(data []byte) error {
+	*m = NestedRequest{Header: m.Header}
 	m.decoded = true
 	idx := -1
 	for len(data) > 0 {
@@ -398,7 +405,7 @@ func (m *NestedRequest) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = NestedRequest{Header: h}
+	m.Header = h
 	return m.DecodeAVPs(avps)
 }
 

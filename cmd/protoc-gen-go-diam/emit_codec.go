@@ -172,11 +172,20 @@ func genFixedCheck(g *protogen.GeneratedFile, fd *field) {
 }
 
 func genDecodeAVPs(g *protogen.GeneratedFile, m *message) {
-	g.P("// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence")
+	g.P("// DecodeAVPs replaces the AVPs of m with those of an AVP sequence", map[bool]string{true: "; the", false: "."}[m.cmd != nil])
+	if m.cmd != nil {
+		g.P("// Header is kept.")
+	}
+	g.P("// It fails only when the sequence")
 	g.P("// itself cannot be split into AVPs. AVPs that the grammar does not describe")
 	g.P("// go to Unknown; a value that cannot be decoded and an occurrence beyond a")
 	g.P("// maximum are skipped and reported by Validate.")
 	g.P("func (m *", m.name, ") DecodeAVPs(data []byte) error {")
+	if m.cmd != nil {
+		g.P("*m = ", m.name, "{Header: m.Header}")
+	} else {
+		g.P("*m = ", m.name, "{}")
+	}
 	g.P("m.decoded = true")
 	if m.hasFixed() {
 		g.P("idx := -1")

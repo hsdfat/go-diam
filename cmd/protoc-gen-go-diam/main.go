@@ -57,6 +57,11 @@ func generateFile(gen *protogen.Plugin, d *dict, f *protogen.File) error {
 		if err != nil {
 			return err
 		}
+		if msg.cmd != nil {
+			if err := d.claim(msg); err != nil {
+				return err
+			}
+		}
 		msgs = append(msgs, msg)
 	}
 

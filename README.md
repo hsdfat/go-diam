@@ -85,8 +85,11 @@ knowledge to compile time:
 - **Errors you can answer with.** `Validate` returns an `*diam.AVPError`
   carrying the Result-Code (5001, 5004, 5005, 5009, 5014) and the offending
   AVP for `Failed-AVP`.
-- **Lossless.** Unknown AVPs are kept in `Unknown` and re-encoded verbatim,
-  so proxies and test tools don't silently drop data.
+- **Unknown AVPs survive.** AVPs the schema does not describe are kept in
+  `Unknown` and re-encoded verbatim. Known AVPs are re-encoded from the typed
+  fields, in grammar order: an AVP whose value could not be decoded or that
+  occurs too often is reported by `Validate` and not re-encoded, so check
+  `Validate` before forwarding a message.
 - **Fast.** Encoding allocates nothing when you reuse a buffer
   (`AppendMarshal`). See [Benchmarks](#benchmarks).
 - **Codec only.** go-diam does not open sockets. Use your own TCP/SCTP/TLS
@@ -378,11 +381,14 @@ evidence:
    go-diam; the bytes must be identical, and each library must decode and
    re-encode the other's output.
 4. **Real captures.** Frames received from open-source peers running in CI
-   (freeDiameter today; Open5GS and PyHSS for the 3GPP applications) are
-   committed with their source and replayed: they must decode, validate and
-   re-encode to the same AVPs.
-5. **Fuzzing.** `Unmarshal` must never panic, and decode → encode → decode
-   must be stable. Every command has a fuzz target that runs in CI.
+   (freeDiameter for the base protocol; Open5GS and PyHSS are planned for
+   the 3GPP applications) are committed with their source and replayed: they
+   must decode, validate and re-encode to the same AVPs. No capture is
+   committed yet, which is why the base protocol is listed as spec-only; the
+   replay test is skipped until the first one is.
+5. **Fuzzing.** `Unmarshal` must never panic, and encoding a decoded message,
+   decoding that and encoding again must give the same bytes. Every command
+   has a fuzz target, and CI runs each for a short budget.
 6. **Benchmarks.** At least one command per application is measured against
    go-diameter and published above.
 

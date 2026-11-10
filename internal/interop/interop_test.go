@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 
 	fd "github.com/fiorix/go-diameter/v4/diam"
@@ -24,18 +25,16 @@ const (
 
 var hdr = diam.Header{HopByHop: hopByHop, EndToEnd: endToEnd}
 
-// noM lists the base AVPs RFC 6733 §4.5 sends without the M-bit.
-var noM = map[uint32]bool{
-	base.AVPProductName:        true,
-	base.AVPFirmwareRevision:   true,
-	base.AVPErrorMessage:       true,
-	base.AVPErrorReportingHost: true,
-}
-
-// fa builds a go-diameter AVP with the flags RFC 6733 gives the code.
+// fa builds a go-diameter AVP. The code comes from go-diameter's own
+// constants and the M-bit from its own dictionary, so nothing on this side of
+// the comparison is derived from go-diam's schema.
 func fa(code uint32, data datatype.Type) *fd.AVP {
+	def, err := dict.Default.FindAVPByCode(0, code, 0)
+	if err != nil {
+		panic(err)
+	}
 	var flags uint8
-	if !noM[code] {
+	if strings.Contains(def.Must, "M") {
 		flags = avp.Mbit
 	}
 	return fd.NewAVP(code, flags, 0, data)
@@ -54,7 +53,7 @@ func addr(s string) *fd.AVP {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
-	return fa(base.AVPHostIpAddress, datatype.Address(ip))
+	return fa(avp.HostIPAddress, datatype.Address(ip))
 }
 func group(code uint32, avps ...*fd.AVP) *fd.AVP {
 	return fa(code, &fd.GroupedAVP{AVP: avps})
@@ -89,14 +88,14 @@ func pairs() []pair {
 	)
 	gProxy := []base.ProxyInfo{{ProxyHost: "dra.example.org", ProxyState: []byte{1, 2, 3}}}
 	fProxy := func() *fd.AVP {
-		return group(base.AVPProxyInfo, ident(base.AVPProxyHost, "dra.example.org"), octets(base.AVPProxyState, 1, 2, 3))
+		return group(avp.ProxyInfo, ident(avp.ProxyHost, "dra.example.org"), octets(avp.ProxyState, 1, 2, 3))
 	}
 	// The Failed-AVP content is a well-formed AVP, so go-diameter can decode it.
 	gFailed := &base.FailedAvp{Unknown: []diam.RawAVP{{Code: base.AVPOriginStateId, Flags: diam.AVPFlagMandatory, Data: []byte{0, 0, 0, 9}}}}
-	fFailed := func() *fd.AVP { return group(base.AVPFailedAvp, u32(base.AVPOriginStateId, 9)) }
+	fFailed := func() *fd.AVP { return group(avp.FailedAVP, u32(avp.OriginStateID, 9)) }
 	gVSA := []base.VendorSpecificApplicationId{{VendorId: 10415, AuthApplicationId: diam.Some(uint32(s6a))}}
 	fVSA := func() *fd.AVP {
-		return group(base.AVPVendorSpecificApplicationId, u32(base.AVPVendorId, 10415), u32(base.AVPAuthApplicationId, s6a))
+		return group(avp.VendorSpecificApplicationID, u32(avp.VendorID, 10415), u32(avp.AuthApplicationID, s6a))
 	}
 	addrs := []netip.Addr{netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("2001:db8::1")}
 
@@ -109,10 +108,10 @@ func pairs() []pair {
 				FirmwareRevision: diam.Some(uint32(1)),
 			},
 			fmsg(257, req,
-				ident(base.AVPOriginHost, mme), ident(base.AVPOriginRealm, realm), addr("192.0.2.1"), addr("2001:db8::1"),
-				u32(base.AVPVendorId, 10415), utf8(base.AVPProductName, "go-diam"), u32(base.AVPOriginStateId, 7),
-				u32(base.AVPSupportedVendorId, 10415), u32(base.AVPSupportedVendorId, 13019), u32(base.AVPAuthApplicationId, s6a),
-				u32(base.AVPInbandSecurityId, 0), u32(base.AVPAcctApplicationId, 3), fVSA(), u32(base.AVPFirmwareRevision, 1)),
+				ident(avp.OriginHost, mme), ident(avp.OriginRealm, realm), addr("192.0.2.1"), addr("2001:db8::1"),
+				u32(avp.VendorID, 10415), utf8(avp.ProductName, "go-diam"), u32(avp.OriginStateID, 7),
+				u32(avp.SupportedVendorID, 10415), u32(avp.SupportedVendorID, 13019), u32(avp.AuthApplicationID, s6a),
+				u32(avp.InbandSecurityID, 0), u32(avp.AcctApplicationID, 3), fVSA(), u32(avp.FirmwareRevision, 1)),
 		},
 		{"CEA",
 			&base.CapabilitiesExchangeAnswer{
@@ -122,33 +121,33 @@ func pairs() []pair {
 				AcctApplicationId: []uint32{3}, VendorSpecificApplicationId: gVSA, FirmwareRevision: diam.Some(uint32(2)),
 			},
 			fmsg(257, 0,
-				u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, hss), ident(base.AVPOriginRealm, realm), addr("192.0.2.1"),
-				u32(base.AVPVendorId, 10415), utf8(base.AVPProductName, "go-diam"), u32(base.AVPOriginStateId, 8),
-				utf8(base.AVPErrorMessage, "ok"), fFailed(), u32(base.AVPSupportedVendorId, 10415), u32(base.AVPAuthApplicationId, s6a),
-				u32(base.AVPInbandSecurityId, 0), u32(base.AVPAcctApplicationId, 3), fVSA(), u32(base.AVPFirmwareRevision, 2)),
+				u32(avp.ResultCode, 2001), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm), addr("192.0.2.1"),
+				u32(avp.VendorID, 10415), utf8(avp.ProductName, "go-diam"), u32(avp.OriginStateID, 8),
+				utf8(avp.ErrorMessage, "ok"), fFailed(), u32(avp.SupportedVendorID, 10415), u32(avp.AuthApplicationID, s6a),
+				u32(avp.InbandSecurityID, 0), u32(avp.AcctApplicationID, 3), fVSA(), u32(avp.FirmwareRevision, 2)),
 		},
 		{"DWR",
 			&base.DeviceWatchdogRequest{Header: hdr, OriginHost: mme, OriginRealm: realm, OriginStateId: diam.Some(uint32(7))},
-			fmsg(280, req, ident(base.AVPOriginHost, mme), ident(base.AVPOriginRealm, realm), u32(base.AVPOriginStateId, 7)),
+			fmsg(280, req, ident(avp.OriginHost, mme), ident(avp.OriginRealm, realm), u32(avp.OriginStateID, 7)),
 		},
 		{"DWA",
 			&base.DeviceWatchdogAnswer{
 				Header: hdr, ResultCode: 2001, OriginHost: hss, OriginRealm: realm, ErrorMessage: diam.Some("ok"),
 				FailedAvp: gFailed, OriginStateId: diam.Some(uint32(8)),
 			},
-			fmsg(280, 0, u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, hss), ident(base.AVPOriginRealm, realm),
-				utf8(base.AVPErrorMessage, "ok"), fFailed(), u32(base.AVPOriginStateId, 8)),
+			fmsg(280, 0, u32(avp.ResultCode, 2001), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
+				utf8(avp.ErrorMessage, "ok"), fFailed(), u32(avp.OriginStateID, 8)),
 		},
 		{"DPR",
 			&base.DisconnectPeerRequest{Header: hdr, OriginHost: mme, OriginRealm: realm, DisconnectCause: base.DisconnectCauseBusy},
-			fmsg(282, req, ident(base.AVPOriginHost, mme), ident(base.AVPOriginRealm, realm), enum(base.AVPDisconnectCause, 1)),
+			fmsg(282, req, ident(avp.OriginHost, mme), ident(avp.OriginRealm, realm), enum(avp.DisconnectCause, 1)),
 		},
 		{"DPA",
 			&base.DisconnectPeerAnswer{
 				Header: hdr, ResultCode: 2001, OriginHost: hss, OriginRealm: realm, ErrorMessage: diam.Some("bye"), FailedAvp: gFailed,
 			},
-			fmsg(282, 0, u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, hss), ident(base.AVPOriginRealm, realm),
-				utf8(base.AVPErrorMessage, "bye"), fFailed()),
+			fmsg(282, 0, u32(avp.ResultCode, 2001), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
+				utf8(avp.ErrorMessage, "bye"), fFailed()),
 		},
 		{"RAR",
 			&base.ReAuthRequest{
@@ -156,10 +155,10 @@ func pairs() []pair {
 				AuthApplicationId: s6a, ReAuthRequestType: base.ReAuthRequestTypeAuthorizeAuthenticate, UserName: diam.Some(imsi),
 				OriginStateId: diam.Some(uint32(8)), ProxyInfo: gProxy, RouteRecord: []string{"dra.example.org"},
 			},
-			fmsg(258, req|pxy, utf8(base.AVPSessionId, "hss;1;2"), ident(base.AVPOriginHost, hss), ident(base.AVPOriginRealm, realm),
-				ident(base.AVPDestinationRealm, realm), ident(base.AVPDestinationHost, mme), u32(base.AVPAuthApplicationId, s6a),
-				enum(base.AVPReAuthRequestType, 1), utf8(base.AVPUserName, imsi), u32(base.AVPOriginStateId, 8), fProxy(),
-				ident(base.AVPRouteRecord, "dra.example.org")),
+			fmsg(258, req|pxy, utf8(avp.SessionID, "hss;1;2"), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
+				ident(avp.DestinationRealm, realm), ident(avp.DestinationHost, mme), u32(avp.AuthApplicationID, s6a),
+				enum(avp.ReAuthRequestType, 1), utf8(avp.UserName, imsi), u32(avp.OriginStateID, 8), fProxy(),
+				ident(avp.RouteRecord, "dra.example.org")),
 		},
 		{"RAA",
 			&base.ReAuthAnswer{
@@ -168,11 +167,11 @@ func pairs() []pair {
 				FailedAvp: gFailed, RedirectHost: []string{"aaa://alt.example.org:3868"},
 				RedirectHostUsage: diam.Some(base.RedirectHostUsageAllRealm), RedirectMaxCacheTime: diam.Some(uint32(60)), ProxyInfo: gProxy,
 			},
-			fmsg(258, pxy, utf8(base.AVPSessionId, "hss;1;2"), u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, mme),
-				ident(base.AVPOriginRealm, realm), utf8(base.AVPUserName, imsi), u32(base.AVPOriginStateId, 7),
-				utf8(base.AVPErrorMessage, "ok"), ident(base.AVPErrorReportingHost, mme), fFailed(),
-				uri(base.AVPRedirectHost, "aaa://alt.example.org:3868"), enum(base.AVPRedirectHostUsage, 2),
-				u32(base.AVPRedirectMaxCacheTime, 60), fProxy()),
+			fmsg(258, pxy, utf8(avp.SessionID, "hss;1;2"), u32(avp.ResultCode, 2001), ident(avp.OriginHost, mme),
+				ident(avp.OriginRealm, realm), utf8(avp.UserName, imsi), u32(avp.OriginStateID, 7),
+				utf8(avp.ErrorMessage, "ok"), ident(avp.ErrorReportingHost, mme), fFailed(),
+				uri(avp.RedirectHost, "aaa://alt.example.org:3868"), enum(avp.RedirectHostUsage, 2),
+				u32(avp.RedirectMaxCacheTime, 60), fProxy()),
 		},
 		{"STR",
 			&base.SessionTerminationRequest{
@@ -180,10 +179,10 @@ func pairs() []pair {
 				TerminationCause: base.TerminationCauseLogout, UserName: diam.Some(imsi), DestinationHost: diam.Some(hss),
 				Class: [][]byte{{1}, {2, 3}}, OriginStateId: diam.Some(uint32(7)), ProxyInfo: gProxy, RouteRecord: []string{"dra.example.org"},
 			},
-			fmsg(275, req|pxy, utf8(base.AVPSessionId, "mme;1;2"), ident(base.AVPOriginHost, mme), ident(base.AVPOriginRealm, realm),
-				ident(base.AVPDestinationRealm, realm), u32(base.AVPAuthApplicationId, s6a), enum(base.AVPTerminationCause, 1),
-				utf8(base.AVPUserName, imsi), ident(base.AVPDestinationHost, hss), octets(base.AVPClass, 1), octets(base.AVPClass, 2, 3),
-				u32(base.AVPOriginStateId, 7), fProxy(), ident(base.AVPRouteRecord, "dra.example.org")),
+			fmsg(275, req|pxy, utf8(avp.SessionID, "mme;1;2"), ident(avp.OriginHost, mme), ident(avp.OriginRealm, realm),
+				ident(avp.DestinationRealm, realm), u32(avp.AuthApplicationID, s6a), enum(avp.TerminationCause, 1),
+				utf8(avp.UserName, imsi), ident(avp.DestinationHost, hss), octets(avp.Class, 1), octets(avp.Class, 2, 3),
+				u32(avp.OriginStateID, 7), fProxy(), ident(avp.RouteRecord, "dra.example.org")),
 		},
 		{"STA",
 			&base.SessionTerminationAnswer{
@@ -192,11 +191,11 @@ func pairs() []pair {
 				OriginStateId: diam.Some(uint32(8)), RedirectHost: []string{"aaa://alt.example.org:3868"},
 				RedirectHostUsage: diam.Some(base.RedirectHostUsageDontCache), RedirectMaxCacheTime: diam.Some(uint32(60)), ProxyInfo: gProxy,
 			},
-			fmsg(275, pxy, utf8(base.AVPSessionId, "mme;1;2"), u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, hss),
-				ident(base.AVPOriginRealm, realm), utf8(base.AVPUserName, imsi), octets(base.AVPClass, 1),
-				utf8(base.AVPErrorMessage, "ok"), ident(base.AVPErrorReportingHost, hss), fFailed(), u32(base.AVPOriginStateId, 8),
-				uri(base.AVPRedirectHost, "aaa://alt.example.org:3868"), enum(base.AVPRedirectHostUsage, 0),
-				u32(base.AVPRedirectMaxCacheTime, 60), fProxy()),
+			fmsg(275, pxy, utf8(avp.SessionID, "mme;1;2"), u32(avp.ResultCode, 2001), ident(avp.OriginHost, hss),
+				ident(avp.OriginRealm, realm), utf8(avp.UserName, imsi), octets(avp.Class, 1),
+				utf8(avp.ErrorMessage, "ok"), ident(avp.ErrorReportingHost, hss), fFailed(), u32(avp.OriginStateID, 8),
+				uri(avp.RedirectHost, "aaa://alt.example.org:3868"), enum(avp.RedirectHostUsage, 0),
+				u32(avp.RedirectMaxCacheTime, 60), fProxy()),
 		},
 		{"ASR",
 			&base.AbortSessionRequest{
@@ -204,9 +203,9 @@ func pairs() []pair {
 				AuthApplicationId: s6a, UserName: diam.Some(imsi), OriginStateId: diam.Some(uint32(8)), ProxyInfo: gProxy,
 				RouteRecord: []string{"dra.example.org"},
 			},
-			fmsg(274, req|pxy, utf8(base.AVPSessionId, "hss;1;2"), ident(base.AVPOriginHost, hss), ident(base.AVPOriginRealm, realm),
-				ident(base.AVPDestinationRealm, realm), ident(base.AVPDestinationHost, mme), u32(base.AVPAuthApplicationId, s6a),
-				utf8(base.AVPUserName, imsi), u32(base.AVPOriginStateId, 8), fProxy(), ident(base.AVPRouteRecord, "dra.example.org")),
+			fmsg(274, req|pxy, utf8(avp.SessionID, "hss;1;2"), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
+				ident(avp.DestinationRealm, realm), ident(avp.DestinationHost, mme), u32(avp.AuthApplicationID, s6a),
+				utf8(avp.UserName, imsi), u32(avp.OriginStateID, 8), fProxy(), ident(avp.RouteRecord, "dra.example.org")),
 		},
 		{"ASA",
 			&base.AbortSessionAnswer{
@@ -215,11 +214,11 @@ func pairs() []pair {
 				FailedAvp: gFailed, RedirectHost: []string{"aaa://alt.example.org:3868"},
 				RedirectHostUsage: diam.Some(base.RedirectHostUsageAllUser), RedirectMaxCacheTime: diam.Some(uint32(60)), ProxyInfo: gProxy,
 			},
-			fmsg(274, pxy, utf8(base.AVPSessionId, "hss;1;2"), u32(base.AVPResultCode, 2001), ident(base.AVPOriginHost, mme),
-				ident(base.AVPOriginRealm, realm), utf8(base.AVPUserName, imsi), u32(base.AVPOriginStateId, 7),
-				utf8(base.AVPErrorMessage, "ok"), ident(base.AVPErrorReportingHost, mme), fFailed(),
-				uri(base.AVPRedirectHost, "aaa://alt.example.org:3868"), enum(base.AVPRedirectHostUsage, 6),
-				u32(base.AVPRedirectMaxCacheTime, 60), fProxy()),
+			fmsg(274, pxy, utf8(avp.SessionID, "hss;1;2"), u32(avp.ResultCode, 2001), ident(avp.OriginHost, mme),
+				ident(avp.OriginRealm, realm), utf8(avp.UserName, imsi), u32(avp.OriginStateID, 7),
+				utf8(avp.ErrorMessage, "ok"), ident(avp.ErrorReportingHost, mme), fFailed(),
+				uri(avp.RedirectHost, "aaa://alt.example.org:3868"), enum(avp.RedirectHostUsage, 6),
+				u32(avp.RedirectMaxCacheTime, 60), fProxy()),
 		},
 	}
 }
@@ -284,7 +283,7 @@ func TestGoDiamToFiorix(t *testing.T) {
 			}
 
 			want := p.fiorix
-			for _, code := range []uint32{base.AVPOriginHost, base.AVPOriginRealm, base.AVPSessionId, base.AVPResultCode, base.AVPUserName} {
+			for _, code := range []uint32{avp.OriginHost, avp.OriginRealm, avp.SessionID, avp.ResultCode, avp.UserName} {
 				wa, werr := want.FindAVP(code, 0)
 				ga, gerr := m.FindAVP(code, 0)
 				if (werr == nil) != (gerr == nil) {

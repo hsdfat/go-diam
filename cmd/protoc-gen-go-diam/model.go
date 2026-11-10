@@ -90,9 +90,18 @@ func buildMessage(g *protogen.GeneratedFile, d *dict, f *protogen.File, m *proto
 	if proto.HasExtension(m.Desc.Options(), diampb.E_Command) {
 		msg.cmd = proto.GetExtension(m.Desc.Options(), diampb.E_Command).(*diampb.Command)
 	}
+	if len(m.Messages) > 0 || len(m.Enums) > 0 {
+		return nil, fmt.Errorf("%s: nested messages, enums and map fields are not supported; declare the type at the top level", m.Desc.FullName())
+	}
+	if msg.cmd != nil && msg.cmd.GetCode() > maxCommandCode {
+		return nil, fmt.Errorf("%s: command code %d does not fit in 24 bits", m.Desc.FullName(), msg.cmd.GetCode())
+	}
 	seen := map[uint64]string{}
 	reqBit, fixedPos := 0, 0
 	for _, fl := range m.Fields {
+		if err := checkField(msg, fl); err != nil {
+			return nil, err
+		}
 		def, err := d.lookup(fl, f.Desc)
 		if err != nil {
 			return nil, err
@@ -132,6 +141,43 @@ func buildMessage(g *protogen.GeneratedFile, d *dict, f *protogen.File, m *proto
 		msg.fields = append(msg.fields, fd)
 	}
 	return msg, nil
+}
+
+// maxCommandCode is the largest value of the 24-bit Command Code field.
+const maxCommandCode = 0xFFFFFF
+
+// reservedNames are Go names the generated struct already uses. A field with
+// one of them would not compile.
+var (
+	reservedNames        = map[string]bool{"Unknown": true, "Validate": true, "AppendAVPs": true, "DecodeAVPs": true}
+	reservedCommandNames = map[string]bool{"Header": true, "AppendMarshal": true, "DiamHeader": true}
+)
+
+// checkField rejects the field shapes the schema language has no meaning for,
+// so a mistake fails here instead of producing code that does not compile or
+// a grammar nobody wrote.
+func checkField(msg *message, fl *protogen.Field) error {
+	name := fl.Desc.FullName()
+	opts := fl.Desc.Options()
+	if fl.Oneof != nil && !fl.Oneof.Desc.IsSynthetic() {
+		return fmt.Errorf("field %s: oneof is not supported; a Diameter grammar has no alternatives, use optional fields", name)
+	}
+	if reservedNames[fl.GoName] || (msg.cmd != nil && reservedCommandNames[fl.GoName]) {
+		return fmt.Errorf("field %s: the Go name %s is reserved by the generated code; rename the field and set (diam.avp)", name, fl.GoName)
+	}
+	min := proto.GetExtension(opts, diampb.E_Min).(uint32)
+	max := proto.GetExtension(opts, diampb.E_Max).(uint32)
+	fixed := proto.GetExtension(opts, diampb.E_Fixed).(bool)
+	if !fl.Desc.IsList() && (min != 0 || max != 0) {
+		return fmt.Errorf("field %s: (diam.min) and (diam.max) only apply to repeated fields", name)
+	}
+	if fl.Desc.IsList() && fixed {
+		return fmt.Errorf("field %s: (diam.fixed) on a repeated field has no defined position", name)
+	}
+	if max != 0 && min > max {
+		return fmt.Errorf("field %s: (diam.min) is greater than (diam.max)", name)
+	}
+	return nil
 }
 
 // goType returns the Go element type for a field and checks that the proto

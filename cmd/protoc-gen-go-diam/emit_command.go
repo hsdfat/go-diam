@@ -50,7 +50,7 @@ func genCommand(g *protogen.GeneratedFile, m *message) {
 	g.P("if err != nil {")
 	g.P("return err")
 	g.P("}")
-	g.P("*m = ", m.name, "{Header: h}")
+	g.P("m.Header = h")
 	g.P("return m.DecodeAVPs(avps)")
 	g.P("}")
 	g.P()

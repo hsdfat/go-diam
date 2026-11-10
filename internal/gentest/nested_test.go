@@ -259,3 +259,29 @@ func TestCrossPackageGroup(t *testing.T) {
 		t.Fatalf("error = %+v, want Proxy-State missing in Outer/Middle/Proxy-Info", ae)
 	}
 }
+
+func TestDecodeAVPsResets(t *testing.T) {
+	// DecodeAVPs is public through diam.Group: decoding into a used value
+	// must not keep fields, Unknown entries or findings of the first decode.
+	first := (&Cards{MinU32: []uint32{1}, OptU32: diam.Some(uint32(1)),
+		Unknown: []diam.RawAVP{rawU32(AVPOptU32, vendor, diam.AVPFlagMandatory, 2), {Code: 9999, Data: []byte{1}}}}).AppendAVPs(nil)
+	second := (&Cards{MinU32: []uint32{7}}).AppendAVPs(nil)
+
+	var c Cards
+	if err := c.DecodeAVPs(first); err != nil || c.Validate() == nil {
+		t.Fatalf("first decode: %v / %v", err, c.Validate())
+	}
+	if err := c.DecodeAVPs(second); err != nil {
+		t.Fatal(err)
+	}
+	var fresh Cards
+	if err := fresh.DecodeAVPs(second); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(&c, &fresh) {
+		t.Fatalf("reused = %+v\nfresh  = %+v", c, fresh)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("stale finding after reuse: %v", err)
+	}
+}

@@ -78,18 +78,9 @@ jobs:
         working-directory: internal/interop
         run: go vet ./... && go test -race ./...
 
+  # Every fuzz target of the library, a short budget each.
   fuzz:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - { pkg: ./diam/, name: FuzzNextAVP }
-          - { pkg: ./base/, name: FuzzCER }
-          - { pkg: ./base/, name: FuzzCEA }
-          - { pkg: ./base/, name: FuzzSTR }
-          - { pkg: ./base/, name: FuzzASA }
-          - { pkg: ./internal/gentest/, name: FuzzTestRequest }
     env:
       GOWORK: "off"
     steps:
@@ -97,4 +88,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - run: go test ${{ matrix.target.pkg }} -run='^$' -fuzz='^${{ matrix.target.name }}$' -fuzztime=20s
+      - name: Fuzz every target for 20 s
+        run: |
+          set -eu
+          for pkg in $(go list ./...); do
+            for target in $(go test "$pkg" -list '^Fuzz' | grep '^Fuzz' || true); do
+              echo "::group::$pkg $target"
+              go test "$pkg" -run='^$' -fuzz="^${target}\$" -fuzztime=20s
+              echo "::endgroup::"
+            done
+          done
