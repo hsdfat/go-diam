@@ -22,10 +22,40 @@ ulr := &s6a.UpdateLocationRequest{
 b, err := ulr.Marshal()
 ```
 
-> **Status: pre-release.** The schema language, runtime and generator are
-> working in a prototype that interoperates with fiorix/go-diameter, but the
-> public packages are still being built (wave 0, see [Roadmap](#roadmap)).
-> The API below is the prototype's. It may still change before `v1.0.0`.
+> **Status: pre-release, wave 0.** What is in the repository today: the
+> runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`) and the RFC 6733
+> base protocol (`base`), tested in both directions against
+> fiorix/go-diameter. The S6a examples below show the same API on a 3GPP
+> application; `s6a` is a prototype on the `spike/proto3-codegen` branch and
+> lands in wave 1 (see [Coverage](#coverage)). The API may still change
+> before `v1.0.0`.
+
+What works today, with the base protocol:
+
+```go
+import (
+    "net/netip"
+
+    "github.com/hsdfat/go-diam/base"
+    "github.com/hsdfat/go-diam/diam"
+)
+
+cer := &base.CapabilitiesExchangeRequest{
+    Header:            diam.Header{HopByHop: 1, EndToEnd: 1},
+    OriginHost:        "mme.example.org",
+    OriginRealm:       "example.org",
+    HostIpAddress:     []netip.Addr{netip.MustParseAddr("192.0.2.1")},
+    VendorId:          10415,
+    ProductName:       "my-node",
+    AuthApplicationId: []uint32{16777251},
+}
+b, err := cer.Marshal()
+
+m, err := diam.Decode(answer) // *base.CapabilitiesExchangeAnswer
+if cea, ok := m.(*base.CapabilitiesExchangeAnswer); ok && cea.Validate() == nil {
+    // cea.ResultCode, cea.OriginHost, cea.SupportedVendorId, ...
+}
+```
 
 ---
 
@@ -68,11 +98,12 @@ knowledge to compile time:
 go get github.com/hsdfat/go-diam
 ```
 
-Generated packages for the supported applications are committed in the
-repository. You only need the generator if you
+Packages: `github.com/hsdfat/go-diam/diam` (runtime) and one generated
+package per application, today `github.com/hsdfat/go-diam/base`. Generated
+code is committed in the repository. You only need the generator if you
 [define your own application](#defining-your-own-application).
 
-Minimum Go version: 1.23.
+Minimum Go version: 1.23. The library depends on the standard library only.
 
 ## Usage
 
@@ -265,34 +296,44 @@ imsi, rat := ulr.UserName, ulr.RatType
 
 ## Benchmarks
 
-Prototype numbers for one S6a ULR with 12 AVPs, including two grouped ones.
-go-diameter's numbers use its default dictionary.
+Both libraries decode the same wire bytes and encode the message they
+decoded from them. go-diameter v4.6.0 uses its default dictionary.
 
-| Operation | go-diam | go-diameter |
-|---|---|---|
-| Decode | 510 ns/op, 288 B, 9 allocs | 1774 ns/op, 1376 B, 42 allocs |
-| Encode (reused buffer) | 65 ns/op, 0 B, 0 allocs | 520 ns/op, 200 B, 15 allocs |
+| Message | Operation | go-diam | go-diameter |
+|---|---|---|---|
+| CER (14 AVPs, 1 grouped) | Decode | 2299 ns/op, 240 B, 10 allocs | 7119 ns/op, 1464 B, 40 allocs |
+| CER | Encode (reused buffer) | 328 ns/op, 0 B, 0 allocs | 2259 ns/op, 144 B, 16 allocs |
+| STR (13 AVPs, 1 grouped) | Decode | 2435 ns/op, 328 B, 15 allocs | 7573 ns/op, 1520 B, 45 allocs |
+| STR | Encode (reused buffer) | 211 ns/op, 0 B, 0 allocs | 1813 ns/op, 208 B, 15 allocs |
+| S6a ULR (12 AVPs, 2 grouped), prototype | Decode | 510 ns/op, 288 B, 9 allocs | 1774 ns/op, 1376 B, 42 allocs |
+| S6a ULR, prototype | Encode (reused buffer) | 65 ns/op, 0 B, 0 allocs | 520 ns/op, 200 B, 15 allocs |
 
-Intel i3-12100F, Go 1.27.1, linux/amd64, `-benchtime=200000x`. These are
-measurements of one message on one machine, not a general claim. The
-benchmark is in `spike/interop` on the `spike/proto3-codegen` branch (it moves
-to `internal/interop` in wave 0), so you can reproduce it. Numbers will
-be republished per interface as they land.
+CER and STR: Intel i3-12100F, Go 1.26.4, linux/amd64, `-benchtime=200000x`,
+on a shared machine under a CPU quota, which is why they are slower in
+absolute terms than the ULR rows. The ULR rows were measured earlier on the
+same CPU with the prototype on the `spike/proto3-codegen` branch. These are
+measurements of single messages on one machine, not a general claim; compare
+the two columns of a row, not rows with each other. Reproduce with:
+
+```sh
+cd internal/interop && go test -run='^$' -bench=. -benchtime=200000x .
+```
 
 ## Coverage
 
 Statuses:
 
-- **verified**: checked against an independent implementation or real
-  captures.
-- **spec-only**: transcribed and cross-checked, but only hand-built test
-  vectors exist because no open-source peer implements it.
+- **verified**: all six gates below pass, including captures from a real
+  peer.
+- **spec-only**: transcribed and cross-checked, but no capture from a real
+  peer is committed.
 - **partial**: some commands missing.
+- **prototype**: exists on the `spike/proto3-codegen` branch only.
 - **planned**: not started.
 
 | Application | Spec | Wave | Status |
 |---|---|---|---|
-| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, ASR/ASA, STR/STA, RAR/RAA) | RFC 6733 | 0 | prototype (CER) |
+| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; freeDiameter captures pending (the `peer` workflow produces them) |
 | S6a/S6d | TS 29.272 | 1 | prototype (ULR/ULA) |
 | Cx/Dx | TS 29.229 | 1 | planned |
 | Sh/Dh | TS 29.329 | 1 | planned |
@@ -329,17 +370,21 @@ evidence:
 
 1. **Spec transcription.** Every proto file names the spec version and
    clauses it was written from, and carries the spec's ABNF as comments.
-2. **Dictionary cross-check.** CI compares code, vendor, flags and type with
-   the freeDiameter and go-diameter dictionaries. Any disagreement must be
-   resolved with a spec citation.
-3. **Interop.** Messages are encoded by go-diameter and decoded by go-diam,
-   and the other way round, and must match byte for byte where AVP order
-   allows.
-4. **Real captures.** Captures come from open-source peers (freeDiameter,
-   Open5GS, PyHSS) running in CI. They must decode, validate and re-encode
-   to the same AVPs.
+2. **Dictionary cross-check.** CI compares code, vendor, M-bit and type of
+   every AVP with the go-diameter dictionary (freeDiameter's is to follow).
+   A disagreement fails the build until it is fixed or listed with a spec
+   citation in `internal/interop/testdata/dictcheck-allow.txt`.
+3. **Interop.** Each command is built once with go-diameter and once with
+   go-diam; the bytes must be identical, and each library must decode and
+   re-encode the other's output.
+4. **Real captures.** Frames received from open-source peers running in CI
+   (freeDiameter today; Open5GS and PyHSS for the 3GPP applications) are
+   committed with their source and replayed: they must decode, validate and
+   re-encode to the same AVPs.
 5. **Fuzzing.** `Unmarshal` must never panic, and decode → encode → decode
-   must be stable.
+   must be stable. Every command has a fuzz target that runs in CI.
+6. **Benchmarks.** At least one command per application is measured against
+   go-diameter and published above.
 
 ## Defining your own application
 
@@ -414,7 +459,8 @@ support work as usual.
 - **Wave 3:** S6b, SWm, STa, SLg, T6a/T6b, Np, Nt, NASREQ, EAP.
 
 Releases stay at `v0.x` until wave 1 is complete. The full design is in
-[`docs/superpowers/specs/2026-11-08-go-diam-design.md`](docs/superpowers/specs/2026-11-08-go-diam-design.md).
+[`docs/superpowers/specs/2026-11-08-go-diam-design.md`](docs/superpowers/specs/2026-11-08-go-diam-design.md),
+and [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to add an application.
 
 Out of scope: transport, peer state machines, routing and DRA logic,
 metrics.

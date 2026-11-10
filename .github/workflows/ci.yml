@@ -1,0 +1,100 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  BUF_VERSION: "1.47.2"
+  PROTOC_GEN_GO_VERSION: "v1.36.12"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - run: buf lint
+      # buf breaking --against the latest v* tag starts with the first tag.
+
+  generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - run: go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+      - name: Regenerate and fail on any difference
+        run: make check-generated
+
+  # The library itself: stdlib only, tested on the minimum Go version and the
+  # two latest releases, without the workspace so nothing leaks in.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.23.x", oldstable, stable]
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Root module has no dependencies
+        run: make root-deps
+
+  # The generator and the interop module have their own go.mod and Go version.
+  test-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - name: Generator
+        working-directory: cmd/protoc-gen-go-diam
+        run: go vet ./... && go test -race ./...
+      - name: Interop, dictionary cross-check, capture replay
+        working-directory: internal/interop
+        run: go vet ./... && go test -race ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { pkg: ./diam/, name: FuzzNextAVP }
+          - { pkg: ./base/, name: FuzzCER }
+          - { pkg: ./base/, name: FuzzCEA }
+          - { pkg: ./base/, name: FuzzSTR }
+          - { pkg: ./base/, name: FuzzASA }
+          - { pkg: ./internal/gentest/, name: FuzzTestRequest }
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test ${{ matrix.target.pkg }} -run='^$' -fuzz='^${{ matrix.target.name }}$' -fuzztime=20s

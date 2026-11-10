@@ -431,3 +431,33 @@ LICENSE (Apache-2.0), NOTICE, README.md, CONTRIBUTING.md
   expected).
 - Order of interfaces inside a wave, after S6a.
 - README wording, within the positioning rule in §1.
+
+## 12. Deviations recorded while building wave 0
+
+Decisions taken during implementation where this document said otherwise.
+The text above is unchanged; these win.
+
+- **§10, dictcheck location.** The cross-check is a test,
+  `internal/interop/dictcheck_test.go`, not a `tools/dictcheck/` module. The
+  interop module already depends on go-diameter, and a test needs no extra
+  binary in CI. It compares against go-diameter only; freeDiameter's
+  dictionary is still to be added.
+- **§10, diampb path.** The Go bindings of `options.proto` are at
+  `cmd/protoc-gen-go-diam/diampb`, not under `internal/`, because the
+  cross-check in `internal/interop` reads the options too.
+- **§5.3, dictionary resolution.** A field resolves in its own file first,
+  then in the files that file imports (directly or not), not in "all files
+  in the request". A file that is merely generated in the same run must not
+  supply an AVP code.
+- **§7, groups without named AVPs.** A message with no fields, such as
+  `Failed-AVP ::= 1* {AVP}`, is a container: its `Validate` always succeeds
+  and the M-bit rule for unknown AVPs does not apply to its content.
+- **§7, V-bit with Vendor-Id 0.** Such an AVP is not the IETF AVP of that
+  code. It goes to `Unknown` and is re-encoded with its V-bit.
+- **§7, AVPError.** It has a `Path` field (enclosing grouped AVP codes,
+  outermost first), as §6 describes.
+- **§3, Go versions.** The root module is `go 1.23`. `internal/interop` and
+  `go.work` are `go 1.26` because go-diameter v4.6.0 requires it; CI tests
+  the root module without the workspace.
+- **Base protocol content.** No E2E-Sequence (RFC 6733 deprecated it) and
+  Inband-Security-Id is Unsigned32, as in the RFC.

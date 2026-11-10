@@ -1,0 +1,45 @@
+# Exchanges CER/CEA, DWR/DWA and DPR/DPA with freeDiameter and publishes the
+# frames it sent as an artifact. A maintainer downloads the artifact and
+# commits it under testdata/captures/base/, where TestCaptures replays it.
+name: peer
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  freediameter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Build the peer image
+        run: docker build -t go-diam-freediameter ci/freediameter
+      - name: Start freeDiameter
+        run: |
+          docker run -d --name peer -p 3868:3868 go-diam-freediameter
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/3868) 2>/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs peer
+          exit 1
+      - name: Talk to the peer and capture its answers
+        working-directory: internal/interop
+        env:
+          DIAM_PEER_ADDR: 127.0.0.1:3868
+        run: go test -tags peer -run TestPeer -v . -update
+      - name: Peer log
+        if: always()
+        run: docker logs peer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: captures-base
+          path: testdata/captures/base/
+          if-no-files-found: error
