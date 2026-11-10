@@ -1,0 +1,79 @@
+// Diameter metadata carried as proto3 custom options.
+//
+// Grammar mapping (RFC 6733 §3.2 Command Code Format):
+//   T x = n;               -> { x }        exactly one
+//   optional T x = n;      -> [ x ]        zero or one
+//   repeated T x = n;      -> *[ x ]       zero or more (bounds via (diam.min)/(diam.max))
+//   (diam.fixed) = true    -> < x >        fixed position, emitted first in field order
+//   (diam.extensible)      -> *[ AVP ]     documentation; unknown AVPs are always kept
+// Field number order is ABNF order.
+//
+// AVP code / vendor / flags / data type live in a dictionary: an enum marked
+// (diam.dictionary) whose value number is the AVP code and whose value name,
+// lower-cased, is the field name that refers to it.
+syntax = "proto3";
+
+package diam;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/hsdfat/go-diam/cmd/protoc-gen-go-diam/diampb";
+
+// Type is the Diameter base data type of an AVP (RFC 6733 §4.2, §4.3).
+// Derived types not listed here map to their base type.
+enum Type {
+  TYPE_UNSPECIFIED = 0;
+  OCTET_STRING = 1;
+  INTEGER32 = 2;
+  INTEGER64 = 3;
+  UNSIGNED32 = 4;
+  UNSIGNED64 = 5;
+  FLOAT32 = 6;
+  FLOAT64 = 7;
+  GROUPED = 8;
+  ADDRESS = 9;
+  TIME = 10;
+  UTF8_STRING = 11;
+  DIAMETER_IDENTITY = 12;
+  DIAMETER_URI = 13;
+  ENUMERATED = 14;
+}
+
+// AVPDef describes one dictionary entry. The AVP code is the enum value number.
+message AVPDef {
+  uint32 vendor = 1; // 0 = IETF, V-bit clear
+  bool m = 2; // M-bit set on send
+  Type type = 3;
+  string since = 4; // e.g. "Rel-11"; documentation only
+}
+
+// Command marks a message as a Diameter command.
+message Command {
+  uint32 code = 1;
+  uint32 app_id = 2;
+  bool request = 3;
+  bool proxiable = 4;
+}
+
+extend google.protobuf.EnumOptions {
+  bool dictionary = 50100;
+}
+
+extend google.protobuf.EnumValueOptions {
+  AVPDef def = 50101;
+}
+
+extend google.protobuf.MessageOptions {
+  Command command = 50110;
+  bool extensible = 50111;
+}
+
+extend google.protobuf.FieldOptions {
+  bool fixed = 50120;
+  uint32 min = 50121;
+  uint32 max = 50122; // 0 = unbounded
+  string avp = 50123; // dictionary entry name when it differs from the field name
+  // m overrides the dictionary M-bit for this use only; cite the spec clause
+  // in a comment on the field. Read with proto.HasExtension.
+  optional bool m = 50124;
+}

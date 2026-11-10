@@ -1,0 +1,6 @@
+# Go bindings of proto/diam/options.proto for the generator itself.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: cmd/protoc-gen-go-diam
+    opt: module=github.com/hsdfat/go-diam/cmd/protoc-gen-go-diam

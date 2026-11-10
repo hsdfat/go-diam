@@ -1,0 +1,6 @@
+# Diameter codecs for every schema except proto/diam.
+version: v2
+plugins:
+  - local: bin/protoc-gen-go-diam
+    out: .
+    opt: module=github.com/hsdfat/go-diam

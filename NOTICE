@@ -1,0 +1,12 @@
+go-diam
+Copyright 2026 Phat Le
+
+This product is licensed under the Apache License, Version 2.0.
+
+Dictionary data used only for cross-checking in tests, never shipped:
+
+- freeDiameter (BSD license), http://www.freediameter.net/
+- go-diameter by Alexandre Fiori (BSD-3-Clause),
+  https://github.com/fiorix/go-diameter
+
+AVP definitions are transcribed from IETF RFCs and 3GPP specifications.
