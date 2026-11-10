@@ -63,9 +63,20 @@ func EndAVP(b []byte, start int) []byte {
 	return b
 }
 
-// AppendRaw re-encodes a RawAVP.
+// AppendRaw re-encodes a RawAVP. The Vendor-Id field is written when the
+// V-bit is set or the vendor is not 0, so an AVP parsed by NextAVP is
+// reproduced exactly, including a V-bit with Vendor-Id 0.
 func AppendRaw(b []byte, a RawAVP) []byte {
-	b, s := BeginAVP(b, a.Code, a.Flags, a.Vendor)
+	s := len(b)
+	flags := a.Flags
+	if a.Vendor != 0 {
+		flags |= AVPFlagVendor
+	}
+	b = binary.BigEndian.AppendUint32(b, a.Code)
+	b = append(b, flags, 0, 0, 0)
+	if flags&AVPFlagVendor != 0 {
+		b = binary.BigEndian.AppendUint32(b, a.Vendor)
+	}
 	b = append(b, a.Data...)
 	return EndAVP(b, s)
 }

@@ -123,3 +123,23 @@ func TestCloneDetaches(t *testing.T) {
 		t.Fatal("Clone still aliases the input buffer")
 	}
 }
+
+func TestAppendRawKeepsVendorFlagWithZeroVendor(t *testing.T) {
+	// V-bit set with Vendor-Id 0 is unusual but must survive a round trip, or
+	// re-encoding would turn it into a different (IETF) AVP.
+	wire := []byte{0, 0, 0, 60, 0x80, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 5}
+	a, _, err := NextAVP(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := AppendRaw(nil, a); !bytes.Equal(out, wire) {
+		t.Fatalf("AppendRaw = %x, want %x", out, wire)
+	}
+
+	// A hand-built RawAVP with a vendor but no V-bit still gets the V-bit.
+	out := AppendRaw(nil, RawAVP{Code: 9999, Vendor: 12345, Data: []byte{1, 2, 3, 4}})
+	got, _, err := NextAVP(out)
+	if err != nil || got.Vendor != 12345 || got.Flags&AVPFlagVendor == 0 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}

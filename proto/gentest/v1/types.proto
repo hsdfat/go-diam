@@ -1,0 +1,115 @@
+// Generator fixture: every diam.Type and every cardinality, under a private
+// vendor id so nothing here can be mistaken for a real application.
+syntax = "proto3";
+
+package gentest.v1;
+
+import "diam/options.proto";
+
+option go_package = "github.com/hsdfat/go-diam/internal/gentest";
+
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  T_OCTET_STRING = 1 [(diam.def) = {vendor: 99999, m: true, type: OCTET_STRING}];
+  T_INTEGER32 = 2 [(diam.def) = {vendor: 99999, m: true, type: INTEGER32}];
+  T_INTEGER64 = 3 [(diam.def) = {vendor: 99999, m: true, type: INTEGER64}];
+  T_UNSIGNED32 = 4 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  T_UNSIGNED64 = 5 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED64}];
+  T_FLOAT32 = 6 [(diam.def) = {vendor: 99999, m: true, type: FLOAT32}];
+  T_FLOAT64 = 7 [(diam.def) = {vendor: 99999, m: true, type: FLOAT64}];
+  T_GROUPED = 8 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  T_ADDRESS = 9 [(diam.def) = {vendor: 99999, m: true, type: ADDRESS}];
+  T_TIME = 10 [(diam.def) = {vendor: 99999, m: true, type: TIME}];
+  T_UTF8_STRING = 11 [(diam.def) = {vendor: 99999, m: true, type: UTF8_STRING}];
+  T_DIAMETER_IDENTITY = 12 [(diam.def) = {vendor: 99999, m: true, type: DIAMETER_IDENTITY}];
+  T_DIAMETER_URI = 13 [(diam.def) = {vendor: 99999, m: true, type: DIAMETER_URI}];
+  T_ENUMERATED = 14 [(diam.def) = {vendor: 99999, m: true, type: ENUMERATED}];
+  T_TEXT = 15 [(diam.def) = {vendor: 99999, m: true, type: OCTET_STRING}];
+
+  ALL_TYPES = 20 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  CARDS = 21 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+
+  OPT_U32 = 30 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  REP_U32 = 31 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  MIN_U32 = 32 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  MAX_U32 = 33 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  OPT_LEAF = 34 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  REP_LEAF = 35 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  OPT_STR = 36 [(diam.def) = {vendor: 99999, m: true, type: UTF8_STRING}];
+  OPT_BYTES = 37 [(diam.def) = {vendor: 99999, m: true, type: OCTET_STRING}];
+
+  SESSION_ID = 40 [(diam.def) = {vendor: 99999, m: true, type: UTF8_STRING}];
+  LEAF_VALUE = 50 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  // No vendor and no M-bit: the only entry that encodes with flags 0.
+  PLAIN_U32 = 60 [(diam.def) = {type: UNSIGNED32}];
+}
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  COLOR_RED = 1;
+}
+
+// Leaf ::= < AVP Header > { Leaf-Value }
+message Leaf {
+  uint32 leaf_value = 1;
+}
+
+// AllTypes has one required field per diam.Type, plus an OctetString that is
+// declared as a proto string.
+message AllTypes {
+  bytes t_octet_string = 1;
+  int32 t_integer32 = 2;
+  int64 t_integer64 = 3;
+  uint32 t_unsigned32 = 4;
+  uint64 t_unsigned64 = 5;
+  float t_float32 = 6;
+  double t_float64 = 7;
+  Leaf t_grouped = 8;
+  bytes t_address = 9;
+  uint32 t_time = 10;
+  string t_utf8_string = 11;
+  string t_diameter_identity = 12;
+  string t_diameter_uri = 13;
+  Color t_enumerated = 14;
+  string t_text = 15;
+}
+
+// Cards has every cardinality and no required field, so it can be empty.
+message Cards {
+  optional uint32 opt_u32 = 1;
+  repeated uint32 rep_u32 = 2;
+  repeated uint32 min_u32 = 3 [(diam.min) = 1];
+  repeated uint32 max_u32 = 4 [(diam.max) = 2];
+  optional Leaf opt_leaf = 5;
+  repeated Leaf rep_leaf = 6;
+  optional string opt_str = 7;
+  optional bytes opt_bytes = 8;
+}
+
+// Test-Request ::= < Diameter Header: 1, REQ, PXY, 99999 >
+//   < Session-Id > { All-Types } { Cards }
+message TestRequest {
+  option (diam.command) = {
+    code: 1
+    app_id: 99999
+    request: true
+    proxiable: true
+  };
+  string session_id = 1 [(diam.fixed) = true];
+  AllTypes all_types = 2;
+  Cards cards = 3;
+}
+
+// Test-Answer ::= < Diameter Header: 1, PXY, 99999 >
+//   < Session-Id > [ Opt-U32 ] [ Plain-U32 ]
+message TestAnswer {
+  option (diam.command) = {
+    code: 1
+    app_id: 99999
+    proxiable: true
+  };
+  string session_id = 1 [(diam.fixed) = true];
+  optional uint32 opt_u32 = 2;
+  optional uint32 plain_u32 = 3;
+}
