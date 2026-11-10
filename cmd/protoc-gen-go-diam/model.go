@@ -50,7 +50,9 @@ type field struct {
 	card   card
 	min    int    // repeated only
 	max    int    // repeated only; 0 = unbounded
+	m      bool   // M-bit on send: the dictionary value or the (diam.m) override
 	fixed  bool   // < X >
+	pos    int    // position among the fixed AVPs, from 0; -1 unless fixed
 	goType string // element type, without Opt, pointer or slice
 	reqBit int    // bit in the seen mask; -1 unless required
 }
@@ -68,6 +70,16 @@ type message struct {
 	fields []*field
 }
 
+// hasFixed reports whether any AVP of the grammar has a fixed position.
+func (m *message) hasFixed() bool {
+	for _, fd := range m.fields {
+		if fd.fixed {
+			return true
+		}
+	}
+	return false
+}
+
 // diamIdent returns the qualified name of an identifier in the runtime.
 func diamIdent(g *protogen.GeneratedFile, name string) string {
 	return g.QualifiedGoIdent(diamPkg.Ident(name))
@@ -79,14 +91,20 @@ func buildMessage(g *protogen.GeneratedFile, d *dict, f *protogen.File, m *proto
 		msg.cmd = proto.GetExtension(m.Desc.Options(), diampb.E_Command).(*diampb.Command)
 	}
 	seen := map[uint64]string{}
-	reqBit := 0
+	reqBit, fixedPos := 0, 0
 	for _, fl := range m.Fields {
-		def, err := d.lookup(fl, f.Desc.Path())
+		def, err := d.lookup(fl, f.Desc)
 		if err != nil {
 			return nil, err
 		}
-		fd := &field{f: fl, def: def, reqBit: -1}
-		fd.fixed = proto.GetExtension(fl.Desc.Options(), diampb.E_Fixed).(bool)
+		fd := &field{f: fl, def: def, m: def.m, reqBit: -1, pos: -1}
+		if proto.HasExtension(fl.Desc.Options(), diampb.E_M) {
+			fd.m = proto.GetExtension(fl.Desc.Options(), diampb.E_M).(bool)
+		}
+		if fd.fixed = proto.GetExtension(fl.Desc.Options(), diampb.E_Fixed).(bool); fd.fixed {
+			fd.pos = fixedPos
+			fixedPos++
+		}
 		switch {
 		case fl.Desc.IsList():
 			fd.card = repeated

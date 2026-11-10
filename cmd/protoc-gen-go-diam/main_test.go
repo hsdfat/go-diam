@@ -66,12 +66,18 @@ func file(name, pkg string, deps []string, enums []*descriptorpb.EnumDescriptorP
 // generate runs the plugin in-process on files, generating the last one.
 func generate(t *testing.T, files ...*descriptorpb.FileDescriptorProto) (*pluginpb.CodeGeneratorResponse, error) {
 	t.Helper()
+	return generateFiles(t, []string{files[len(files)-1].GetName()}, files...)
+}
+
+// generateFiles runs the plugin in-process on files, generating those named.
+func generateFiles(t *testing.T, toGenerate []string, files ...*descriptorpb.FileDescriptorProto) (*pluginpb.CodeGeneratorResponse, error) {
+	t.Helper()
 	req := &pluginpb.CodeGeneratorRequest{
 		ProtoFile: []*descriptorpb.FileDescriptorProto{
 			protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto),
 			protodesc.ToFileDescriptorProto(diampb.File_diam_options_proto),
 		},
-		FileToGenerate: []string{files[len(files)-1].GetName()},
+		FileToGenerate: toGenerate,
 	}
 	req.ProtoFile = append(req.ProtoFile, files...)
 	gen, err := protogen.Options{}.New(req)
@@ -188,4 +194,29 @@ func TestTooManyRequired(t *testing.T) {
 	}
 	_, err := generate(t, build(65))
 	wantError(t, err, "more than 64 required AVPs")
+}
+
+func TestDictionaryEntryMustBeImported(t *testing.T) {
+	// d1.proto is generated in the same run but user.proto does not import
+	// it, so its entries must not resolve: an unrelated file would otherwise
+	// supply the AVP code silently.
+	d1 := file("d1.proto", "d1", nil, []*descriptorpb.EnumDescriptorProto{dictionary(avpEntry{"NAME", 1, diampb.Type_UTF8_STRING})})
+	user := file("user.proto", "user", nil, nil,
+		&descriptorpb.DescriptorProto{
+			Name:  proto.String("Thing"),
+			Field: []*descriptorpb.FieldDescriptorProto{scalarField("name", 1, descriptorpb.FieldDescriptorProto_TYPE_STRING)},
+		})
+	_, err := generateFiles(t, []string{"d1.proto", "user.proto"}, d1, user)
+	wantError(t, err, "no dictionary entry NAME")
+
+	// Reached through a transitive import, it resolves.
+	mid := file("mid.proto", "mid", []string{"d1.proto"}, nil)
+	user = file("user.proto", "user", []string{"mid.proto"}, nil,
+		&descriptorpb.DescriptorProto{
+			Name:  proto.String("Thing"),
+			Field: []*descriptorpb.FieldDescriptorProto{scalarField("name", 1, descriptorpb.FieldDescriptorProto_TYPE_STRING)},
+		})
+	if _, err := generate(t, d1, mid, user); err != nil {
+		t.Fatalf("transitive import: %v", err)
+	}
 }

@@ -80,9 +80,13 @@ func genStruct(g *protogen.GeneratedFile, m *message) {
 	g.P("// Unknown holds AVPs not described above. They are re-encoded verbatim.")
 	g.P("Unknown []", diamIdent(g, "RawAVP"))
 	g.P()
-	g.P("seen    uint64 // required AVPs found by DecodeAVPs")
-	g.P("excess  error  // first occurrence beyond the grammar maximum")
-	g.P("decoded bool   // set by DecodeAVPs; required presence is checked only then")
+	g.P("seen      uint64 // required AVPs found by DecodeAVPs")
+	g.P("decodeErr error  // first AVP whose value could not be decoded")
+	g.P("excess    error  // first occurrence beyond the grammar maximum")
+	if m.hasFixed() {
+		g.P("misplaced error  // first fixed-position AVP found elsewhere")
+	}
+	g.P("decoded   bool   // set by DecodeAVPs; required presence is checked only then")
 	g.P("}")
 	g.P()
 }

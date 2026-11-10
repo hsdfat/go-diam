@@ -12,7 +12,7 @@ import (
 // avpFlags is the flags argument for BeginAVP. The V-bit is added by the
 // runtime from the vendor; the P-bit is never set.
 func avpFlags(g *protogen.GeneratedFile, fd *field) string {
-	if fd.def.m {
+	if fd.m {
 		return diamIdent(g, "AVPFlagMandatory")
 	}
 	return "0"
@@ -119,15 +119,26 @@ func genExcess(g *protogen.GeneratedFile, fd *field) {
 	g.P("continue")
 }
 
+// genRecordDecodeErr emits the bookkeeping for an AVP whose value cannot be
+// decoded: keep the first error for Validate, skip the field, go on.
+func genRecordDecodeErr(g *protogen.GeneratedFile, errExpr string) {
+	g.P("if m.decodeErr == nil {")
+	g.P("m.decodeErr = ", errExpr)
+	g.P("}")
+	g.P("continue")
+}
+
 // genDecodeValue emits the decoding of the current AVP `a` and returns the
-// expression that holds the decoded value.
+// expression that holds the decoded value. A value that cannot be decoded is
+// recorded and the AVP skipped; it never aborts the enclosing message.
 func genDecodeValue(g *protogen.GeneratedFile, fd *field) string {
 	d := fd.def
 	switch d.typ {
 	case diampb.Type_GROUPED:
 		g.P("var v ", fd.goType)
 		g.P("if err := v.DecodeAVPs(a.Data); err != nil {")
-		g.P("return err")
+		genRecordDecodeErr(g, fmt.Sprintf("&%s{ResultCode: %s, AVP: %s(a), Msg: %q}",
+			diamIdent(g, "AVPError"), diamIdent(g, "ResultInvalidAVPLength"), diamIdent(g, "Clone"), "malformed grouped AVP "+d.name))
 		g.P("}")
 		return "v"
 	case diampb.Type_UTF8_STRING, diampb.Type_DIAMETER_IDENTITY, diampb.Type_DIAMETER_URI:
@@ -141,7 +152,7 @@ func genDecodeValue(g *protogen.GeneratedFile, fd *field) string {
 	}
 	g.P("v, err := ", diamIdent(g, decodeFuncs[d.typ]), "(a)")
 	g.P("if err != nil {")
-	g.P("return err")
+	genRecordDecodeErr(g, "err")
 	g.P("}")
 	if d.typ == diampb.Type_ENUMERATED {
 		return fd.goType + "(v)"
@@ -149,18 +160,36 @@ func genDecodeValue(g *protogen.GeneratedFile, fd *field) string {
 	return "v"
 }
 
+// genFixedCheck emits the position check of a fixed AVP: the k-th fixed AVP
+// of the grammar must be the k-th AVP on the wire.
+func genFixedCheck(g *protogen.GeneratedFile, fd *field) {
+	if !fd.fixed {
+		return
+	}
+	g.P("if idx != ", fd.pos, " && m.misplaced == nil {")
+	g.P("m.misplaced = ", diamIdent(g, "Misplaced"), "(", diamIdent(g, "Clone"), "(a), ", fmt.Sprintf("%q", fd.def.name), ")")
+	g.P("}")
+}
+
 func genDecodeAVPs(g *protogen.GeneratedFile, m *message) {
-	g.P("// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not")
-	g.P("// describe go to Unknown. Occurrences beyond a maximum are dropped and")
-	g.P("// reported by Validate.")
+	g.P("// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence")
+	g.P("// itself cannot be split into AVPs. AVPs that the grammar does not describe")
+	g.P("// go to Unknown; a value that cannot be decoded and an occurrence beyond a")
+	g.P("// maximum are skipped and reported by Validate.")
 	g.P("func (m *", m.name, ") DecodeAVPs(data []byte) error {")
 	g.P("m.decoded = true")
+	if m.hasFixed() {
+		g.P("idx := -1")
+	}
 	g.P("for len(data) > 0 {")
 	g.P("a, rest, err := ", diamIdent(g, "NextAVP"), "(data)")
 	g.P("if err != nil {")
 	g.P("return err")
 	g.P("}")
 	g.P("data = rest")
+	if m.hasFixed() {
+		g.P("idx++")
+	}
 	if len(m.fields) == 0 {
 		g.P("m.Unknown = append(m.Unknown, ", diamIdent(g, "Clone"), "(a))")
 		g.P("}")
@@ -184,6 +213,7 @@ func genDecodeAVPs(g *protogen.GeneratedFile, m *message) {
 			g.P("if m.seen&(", bit, ") != 0 {")
 			genExcess(g, fd)
 			g.P("}")
+			genFixedCheck(g, fd)
 			val := genDecodeValue(g, fd)
 			g.P("m.seen |= ", bit)
 			g.P(target, " = ", val)
@@ -195,6 +225,7 @@ func genDecodeAVPs(g *protogen.GeneratedFile, m *message) {
 			g.P("if ", present, " {")
 			genExcess(g, fd)
 			g.P("}")
+			genFixedCheck(g, fd)
 			val := genDecodeValue(g, fd)
 			if fd.grouped() {
 				g.P(target, " = &", val)

@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/hsdfat/go-diam/cmd/protoc-gen-go-diam/diampb"
 )
@@ -31,10 +32,37 @@ func (d avpDef) label() string {
 
 // dict holds every dictionary entry of every file in the request.
 type dict struct {
-	byName map[string][]avpDef
+	byName  map[string][]avpDef
+	visible map[string]map[string]bool // file path -> itself and its transitive imports
 }
 
-func newDict() *dict { return &dict{byName: map[string][]avpDef{}} }
+func newDict() *dict {
+	return &dict{byName: map[string][]avpDef{}, visible: map[string]map[string]bool{}}
+}
+
+// scope returns the files whose dictionaries f may use: f and everything it
+// imports, directly or not. An entry in a file that merely happens to be
+// generated in the same run must not resolve.
+func (d *dict) scope(f protoreflect.FileDescriptor) map[string]bool {
+	if s, ok := d.visible[f.Path()]; ok {
+		return s
+	}
+	s := map[string]bool{}
+	var walk func(protoreflect.FileDescriptor)
+	walk = func(fd protoreflect.FileDescriptor) {
+		if s[fd.Path()] {
+			return
+		}
+		s[fd.Path()] = true
+		imports := fd.Imports()
+		for i := 0; i < imports.Len(); i++ {
+			walk(imports.Get(i).FileDescriptor)
+		}
+	}
+	walk(f)
+	d.visible[f.Path()] = s
+	return s
+}
 
 // collect adds the entries of the dictionary enums in f.
 func (d *dict) collect(f *protogen.File) {
@@ -62,16 +90,21 @@ func (d *dict) collect(f *protogen.File) {
 
 // lookup resolves a field to its dictionary entry. The entry name is the
 // field name in upper case unless (diam.avp) names another. An entry in the
-// field's own file wins; otherwise the name must be unique in the request.
-func (d *dict) lookup(fld *protogen.Field, file string) (avpDef, error) {
+// field's own file wins; otherwise the name must be unique among the files
+// that file imports.
+func (d *dict) lookup(fld *protogen.Field, f protoreflect.FileDescriptor) (avpDef, error) {
 	name := proto.GetExtension(fld.Desc.Options(), diampb.E_Avp).(string)
 	if name == "" {
 		name = strings.ToUpper(string(fld.Desc.Name()))
 	}
-	cands := d.byName[name]
-	for _, c := range cands {
-		if c.file == file {
+	scope := d.scope(f)
+	var cands []avpDef
+	for _, c := range d.byName[name] {
+		if c.file == f.Path() {
 			return c, nil
+		}
+		if scope[c.file] {
+			cands = append(cands, c)
 		}
 	}
 	switch len(cands) {

@@ -64,9 +64,10 @@ type Leaf struct {
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
 
-	seen    uint64 // required AVPs found by DecodeAVPs
-	excess  error  // first occurrence beyond the grammar maximum
-	decoded bool   // set by DecodeAVPs; required presence is checked only then
+	seen      uint64 // required AVPs found by DecodeAVPs
+	decodeErr error  // first AVP whose value could not be decoded
+	excess    error  // first occurrence beyond the grammar maximum
+	decoded   bool   // set by DecodeAVPs; required presence is checked only then
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
@@ -82,9 +83,10 @@ func (m *Leaf) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not
-// describe go to Unknown. Occurrences beyond a maximum are dropped and
-// reported by Validate.
+// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// itself cannot be split into AVPs. AVPs that the grammar does not describe
+// go to Unknown; a value that cannot be decoded and an occurrence beyond a
+// maximum are skipped and reported by Validate.
 func (m *Leaf) DecodeAVPs(data []byte) error {
 	m.decoded = true
 	for len(data) > 0 {
@@ -108,7 +110,10 @@ func (m *Leaf) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 0
 			m.LeafValue = v
@@ -124,6 +129,9 @@ func (m *Leaf) DecodeAVPs(data []byte) error {
 // only: a zero value is a valid encoding, so a hand-built message has
 // nothing to check.
 func (m *Leaf) Validate() error {
+	if m.decodeErr != nil {
+		return m.decodeErr
+	}
 	if m.excess != nil {
 		return m.excess
 	}
@@ -155,9 +163,10 @@ type AllTypes struct {
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
 
-	seen    uint64 // required AVPs found by DecodeAVPs
-	excess  error  // first occurrence beyond the grammar maximum
-	decoded bool   // set by DecodeAVPs; required presence is checked only then
+	seen      uint64 // required AVPs found by DecodeAVPs
+	decodeErr error  // first AVP whose value could not be decoded
+	excess    error  // first occurrence beyond the grammar maximum
+	decoded   bool   // set by DecodeAVPs; required presence is checked only then
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
@@ -215,9 +224,10 @@ func (m *AllTypes) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not
-// describe go to Unknown. Occurrences beyond a maximum are dropped and
-// reported by Validate.
+// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// itself cannot be split into AVPs. AVPs that the grammar does not describe
+// go to Unknown; a value that cannot be decoded and an occurrence beyond a
+// maximum are skipped and reported by Validate.
 func (m *AllTypes) DecodeAVPs(data []byte) error {
 	m.decoded = true
 	for len(data) > 0 {
@@ -251,7 +261,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Integer32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 1
 			m.TInteger32 = v
@@ -264,7 +277,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Integer64(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 2
 			m.TInteger64 = v
@@ -277,7 +293,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 3
 			m.TUnsigned32 = v
@@ -290,7 +309,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned64(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 4
 			m.TUnsigned64 = v
@@ -303,7 +325,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Float32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 5
 			m.TFloat32 = v
@@ -316,7 +341,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Float64(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 6
 			m.TFloat64 = v
@@ -329,7 +357,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			var v Leaf
 			if err := v.DecodeAVPs(a.Data); err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP T_GROUPED"}
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 7
 			m.TGrouped = v
@@ -342,7 +373,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Address(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 8
 			m.TAddress = v
@@ -355,7 +389,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Time(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 9
 			m.TTime = v
@@ -395,7 +432,10 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Integer32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 13
 			m.TEnumerated = Color(v)
@@ -420,6 +460,9 @@ func (m *AllTypes) DecodeAVPs(data []byte) error {
 // only: a zero value is a valid encoding, so a hand-built message has
 // nothing to check.
 func (m *AllTypes) Validate() error {
+	if m.decodeErr != nil {
+		return m.decodeErr
+	}
 	if m.excess != nil {
 		return m.excess
 	}
@@ -447,9 +490,6 @@ func (m *AllTypes) Validate() error {
 	if m.decoded && m.seen&(uint64(1)<<7) == 0 {
 		return diam.Missing(8, 99999, "T_GROUPED")
 	}
-	if err := m.TGrouped.Validate(); err != nil {
-		return err
-	}
 	if m.decoded && m.seen&(uint64(1)<<8) == 0 {
 		return diam.Missing(9, 99999, "T_ADDRESS")
 	}
@@ -471,6 +511,9 @@ func (m *AllTypes) Validate() error {
 	if m.decoded && m.seen&(uint64(1)<<14) == 0 {
 		return diam.Missing(15, 99999, "T_TEXT")
 	}
+	if err := m.TGrouped.Validate(); err != nil {
+		return diam.InGroup(err, 8)
+	}
 	return diam.CheckUnknown(m.Unknown)
 }
 
@@ -488,9 +531,10 @@ type Cards struct {
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
 
-	seen    uint64 // required AVPs found by DecodeAVPs
-	excess  error  // first occurrence beyond the grammar maximum
-	decoded bool   // set by DecodeAVPs; required presence is checked only then
+	seen      uint64 // required AVPs found by DecodeAVPs
+	decodeErr error  // first AVP whose value could not be decoded
+	excess    error  // first occurrence beyond the grammar maximum
+	decoded   bool   // set by DecodeAVPs; required presence is checked only then
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
@@ -543,9 +587,10 @@ func (m *Cards) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not
-// describe go to Unknown. Occurrences beyond a maximum are dropped and
-// reported by Validate.
+// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// itself cannot be split into AVPs. AVPs that the grammar does not describe
+// go to Unknown; a value that cannot be decoded and an occurrence beyond a
+// maximum are skipped and reported by Validate.
 func (m *Cards) DecodeAVPs(data []byte) error {
 	m.decoded = true
 	for len(data) > 0 {
@@ -569,19 +614,28 @@ func (m *Cards) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.OptU32 = diam.Some(v)
 		case 429492434632735: // REP_U32 code 31 vendor 99999
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.RepU32 = append(m.RepU32, v)
 		case 429492434632736: // MIN_U32 code 32 vendor 99999
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.MinU32 = append(m.MinU32, v)
 		case 429492434632737: // MAX_U32 code 33 vendor 99999
@@ -593,7 +647,10 @@ func (m *Cards) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.MaxU32 = append(m.MaxU32, v)
 		case 429492434632738: // OPT_LEAF code 34 vendor 99999
@@ -605,13 +662,19 @@ func (m *Cards) DecodeAVPs(data []byte) error {
 			}
 			var v Leaf
 			if err := v.DecodeAVPs(a.Data); err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP OPT_LEAF"}
+				}
+				continue
 			}
 			m.OptLeaf = &v
 		case 429492434632739: // REP_LEAF code 35 vendor 99999
 			var v Leaf
 			if err := v.DecodeAVPs(a.Data); err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP REP_LEAF"}
+				}
+				continue
 			}
 			m.RepLeaf = append(m.RepLeaf, v)
 		case 429492434632740: // OPT_STR code 36 vendor 99999
@@ -643,6 +706,9 @@ func (m *Cards) DecodeAVPs(data []byte) error {
 // only: a zero value is a valid encoding, so a hand-built message has
 // nothing to check.
 func (m *Cards) Validate() error {
+	if m.decodeErr != nil {
+		return m.decodeErr
+	}
 	if m.excess != nil {
 		return m.excess
 	}
@@ -651,12 +717,12 @@ func (m *Cards) Validate() error {
 	}
 	if m.OptLeaf != nil {
 		if err := m.OptLeaf.Validate(); err != nil {
-			return err
+			return diam.InGroup(err, 34)
 		}
 	}
 	for i := range m.RepLeaf {
 		if err := m.RepLeaf[i].Validate(); err != nil {
-			return err
+			return diam.InGroup(err, 35)
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
@@ -675,9 +741,11 @@ type TestRequest struct {
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
 
-	seen    uint64 // required AVPs found by DecodeAVPs
-	excess  error  // first occurrence beyond the grammar maximum
-	decoded bool   // set by DecodeAVPs; required presence is checked only then
+	seen      uint64 // required AVPs found by DecodeAVPs
+	decodeErr error  // first AVP whose value could not be decoded
+	excess    error  // first occurrence beyond the grammar maximum
+	misplaced error  // first fixed-position AVP found elsewhere
+	decoded   bool   // set by DecodeAVPs; required presence is checked only then
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
@@ -699,17 +767,20 @@ func (m *TestRequest) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not
-// describe go to Unknown. Occurrences beyond a maximum are dropped and
-// reported by Validate.
+// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// itself cannot be split into AVPs. AVPs that the grammar does not describe
+// go to Unknown; a value that cannot be decoded and an occurrence beyond a
+// maximum are skipped and reported by Validate.
 func (m *TestRequest) DecodeAVPs(data []byte) error {
 	m.decoded = true
+	idx := -1
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
 		if err != nil {
 			return err
 		}
 		data = rest
+		idx++
 		// A V-bit with Vendor-Id 0 is not the IETF AVP of that code.
 		if a.Vendor == 0 && a.Flags&diam.AVPFlagVendor != 0 {
 			m.Unknown = append(m.Unknown, diam.Clone(a))
@@ -723,6 +794,9 @@ func (m *TestRequest) DecodeAVPs(data []byte) error {
 				}
 				continue
 			}
+			if idx != 0 && m.misplaced == nil {
+				m.misplaced = diam.Misplaced(diam.Clone(a), "SESSION_ID")
+			}
 			m.seen |= uint64(1) << 0
 			m.SessionId = string(a.Data)
 		case 429492434632724: // ALL_TYPES code 20 vendor 99999
@@ -734,7 +808,10 @@ func (m *TestRequest) DecodeAVPs(data []byte) error {
 			}
 			var v AllTypes
 			if err := v.DecodeAVPs(a.Data); err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP ALL_TYPES"}
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 1
 			m.AllTypes = v
@@ -747,7 +824,10 @@ func (m *TestRequest) DecodeAVPs(data []byte) error {
 			}
 			var v Cards
 			if err := v.DecodeAVPs(a.Data); err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP CARDS"}
+				}
+				continue
 			}
 			m.seen |= uint64(1) << 2
 			m.Cards = v
@@ -763,6 +843,9 @@ func (m *TestRequest) DecodeAVPs(data []byte) error {
 // only: a zero value is a valid encoding, so a hand-built message has
 // nothing to check.
 func (m *TestRequest) Validate() error {
+	if m.decodeErr != nil {
+		return m.decodeErr
+	}
 	if m.excess != nil {
 		return m.excess
 	}
@@ -772,14 +855,17 @@ func (m *TestRequest) Validate() error {
 	if m.decoded && m.seen&(uint64(1)<<1) == 0 {
 		return diam.Missing(20, 99999, "ALL_TYPES")
 	}
-	if err := m.AllTypes.Validate(); err != nil {
-		return err
-	}
 	if m.decoded && m.seen&(uint64(1)<<2) == 0 {
 		return diam.Missing(21, 99999, "CARDS")
 	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if err := m.AllTypes.Validate(); err != nil {
+		return diam.InGroup(err, 20)
+	}
 	if err := m.Cards.Validate(); err != nil {
-		return err
+		return diam.InGroup(err, 21)
 	}
 	return diam.CheckUnknown(m.Unknown)
 }
@@ -828,9 +914,11 @@ type TestAnswer struct {
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
 
-	seen    uint64 // required AVPs found by DecodeAVPs
-	excess  error  // first occurrence beyond the grammar maximum
-	decoded bool   // set by DecodeAVPs; required presence is checked only then
+	seen      uint64 // required AVPs found by DecodeAVPs
+	decodeErr error  // first AVP whose value could not be decoded
+	excess    error  // first occurrence beyond the grammar maximum
+	misplaced error  // first fixed-position AVP found elsewhere
+	decoded   bool   // set by DecodeAVPs; required presence is checked only then
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
@@ -856,17 +944,20 @@ func (m *TestAnswer) AppendAVPs(b []byte) []byte {
 	return b
 }
 
-// DecodeAVPs fills m from an AVP sequence. AVPs that the grammar does not
-// describe go to Unknown. Occurrences beyond a maximum are dropped and
-// reported by Validate.
+// DecodeAVPs fills m from an AVP sequence. It fails only when the sequence
+// itself cannot be split into AVPs. AVPs that the grammar does not describe
+// go to Unknown; a value that cannot be decoded and an occurrence beyond a
+// maximum are skipped and reported by Validate.
 func (m *TestAnswer) DecodeAVPs(data []byte) error {
 	m.decoded = true
+	idx := -1
 	for len(data) > 0 {
 		a, rest, err := diam.NextAVP(data)
 		if err != nil {
 			return err
 		}
 		data = rest
+		idx++
 		// A V-bit with Vendor-Id 0 is not the IETF AVP of that code.
 		if a.Vendor == 0 && a.Flags&diam.AVPFlagVendor != 0 {
 			m.Unknown = append(m.Unknown, diam.Clone(a))
@@ -880,6 +971,9 @@ func (m *TestAnswer) DecodeAVPs(data []byte) error {
 				}
 				continue
 			}
+			if idx != 0 && m.misplaced == nil {
+				m.misplaced = diam.Misplaced(diam.Clone(a), "SESSION_ID")
+			}
 			m.seen |= uint64(1) << 0
 			m.SessionId = string(a.Data)
 		case 429492434632734: // OPT_U32 code 30 vendor 99999
@@ -891,7 +985,10 @@ func (m *TestAnswer) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.OptU32 = diam.Some(v)
 		case 60: // PLAIN_U32 code 60
@@ -903,7 +1000,10 @@ func (m *TestAnswer) DecodeAVPs(data []byte) error {
 			}
 			v, err := diam.Unsigned32(a)
 			if err != nil {
-				return err
+				if m.decodeErr == nil {
+					m.decodeErr = err
+				}
+				continue
 			}
 			m.PlainU32 = diam.Some(v)
 		default:
@@ -918,11 +1018,17 @@ func (m *TestAnswer) DecodeAVPs(data []byte) error {
 // only: a zero value is a valid encoding, so a hand-built message has
 // nothing to check.
 func (m *TestAnswer) Validate() error {
+	if m.decodeErr != nil {
+		return m.decodeErr
+	}
 	if m.excess != nil {
 		return m.excess
 	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(40, 99999, "SESSION_ID")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
 	}
 	return diam.CheckUnknown(m.Unknown)
 }

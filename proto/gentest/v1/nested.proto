@@ -1,0 +1,48 @@
+// Generator fixture: groups nested across files, a fixed-position AVP and a
+// per-use M-bit override.
+syntax = "proto3";
+
+package gentest.v1;
+
+import "diam/options.proto";
+import "gentest/v1/types.proto";
+
+option go_package = "github.com/hsdfat/go-diam/internal/gentest";
+
+enum NestedAvp {
+  option (diam.dictionary) = true;
+  NESTED_AVP_UNSPECIFIED = 0;
+  OUTER = 100 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  MIDDLE = 101 [(diam.def) = {vendor: 99999, m: true, type: GROUPED}];
+  INNER_U32 = 102 [(diam.def) = {vendor: 99999, m: true, type: UNSIGNED32}];
+  NESTED_SESSION = 110 [(diam.def) = {vendor: 99999, m: true, type: UTF8_STRING}];
+}
+
+// Middle ::= < AVP Header: 101 > [ Inner-U32 ] [ Opt-Leaf ]
+// Opt-Leaf and Leaf come from types.proto.
+message Middle {
+  optional uint32 inner_u32 = 1;
+  optional Leaf opt_leaf = 2;
+}
+
+// Outer ::= < AVP Header: 100 > { Middle } [ Inner-U32 ]
+// Here Inner-U32 is sent without the M-bit (fixture for the per-use override).
+message Outer {
+  Middle middle = 1;
+  optional uint32 soft_u32 = 2 [
+    (diam.avp) = "INNER_U32",
+    (diam.m) = false
+  ];
+}
+
+// Nested-Request ::= < Diameter Header: 2, REQ, 99999 >
+//   < Nested-Session > { Outer }
+message NestedRequest {
+  option (diam.command) = {
+    code: 2
+    app_id: 99999
+    request: true
+  };
+  string nested_session = 1 [(diam.fixed) = true];
+  Outer outer = 2;
+}
