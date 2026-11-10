@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/hsdfat/go-diam/base"
 	"github.com/hsdfat/go-diam/diam"
 )
 
@@ -229,5 +230,32 @@ func TestValidateOrder(t *testing.T) {
 	ae = wantResult(t, nr.Validate(), diam.ResultMissingAVP)
 	if ae.AVP.Code != AVPMiddle || !reflect.DeepEqual(ae.Path, []uint32{AVPOuter}) {
 		t.Fatalf("second violation = %+v, want Middle missing in Outer", ae)
+	}
+}
+
+func TestCrossPackageGroup(t *testing.T) {
+	in := &NestedRequest{NestedSession: "s", Outer: Outer{Middle: Middle{
+		ProxyInfo: []base.ProxyInfo{{ProxyHost: "dra.example.org", ProxyState: []byte{1}}},
+	}}}
+	b, _ := in.Marshal()
+	var got NestedRequest
+	if err := got.Unmarshal(b); err != nil || got.Validate() != nil {
+		t.Fatalf("valid message: %v / %v", err, got.Validate())
+	}
+	if pi := got.Outer.Middle.ProxyInfo; len(pi) != 1 || pi[0].ProxyHost != "dra.example.org" {
+		t.Fatalf("ProxyInfo = %+v", pi)
+	}
+
+	// A Proxy-Info without its required Proxy-State, three groups deep. It
+	// is an IETF AVP (no vendor) inside vendor-specific groups.
+	host := diam.AppendRaw(nil, diam.RawAVP{Code: base.AVPProxyHost, Flags: diam.AVPFlagMandatory, Data: []byte("dra")})
+	pi := diam.AppendRaw(nil, diam.RawAVP{Code: base.AVPProxyInfo, Flags: diam.AVPFlagMandatory, Data: host})
+	msg := message(nestedRequestHeader, avp(AVPNestedSession, []byte("s")), avp(AVPOuter, avp(AVPMiddle, pi)))
+	if err := got.Unmarshal(msg); err != nil {
+		t.Fatal(err)
+	}
+	ae := wantResult(t, got.Validate(), diam.ResultMissingAVP)
+	if ae.AVP.Code != base.AVPProxyState || !reflect.DeepEqual(ae.Path, []uint32{AVPOuter, AVPMiddle, base.AVPProxyInfo}) {
+		t.Fatalf("error = %+v, want Proxy-State missing in Outer/Middle/Proxy-Info", ae)
 	}
 }

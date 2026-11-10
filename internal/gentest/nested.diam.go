@@ -4,6 +4,7 @@
 package gentest
 
 import (
+	base "github.com/hsdfat/go-diam/base"
 	diam "github.com/hsdfat/go-diam/diam"
 )
 
@@ -15,11 +16,13 @@ const (
 	AVPNestedSession uint32 = 110
 )
 
-// Middle ::= < AVP Header: 101 > [ Inner-U32 ] [ Opt-Leaf ]
-// Opt-Leaf and Leaf come from types.proto.
+// Middle ::= < AVP Header: 101 > [ Inner-U32 ] [ Opt-Leaf ] * [ Proxy-Info ]
+// Opt-Leaf and Leaf come from types.proto; Proxy-Info is the base protocol
+// group, a type from another Go package.
 type Middle struct {
-	InnerU32 diam.Opt[uint32] // [ ] INNER_U32 code 102 vendor 99999
-	OptLeaf  *Leaf            // [ ] OPT_LEAF code 34 vendor 99999
+	InnerU32  diam.Opt[uint32] // [ ] INNER_U32 code 102 vendor 99999
+	OptLeaf   *Leaf            // [ ] OPT_LEAF code 34 vendor 99999
+	ProxyInfo []base.ProxyInfo // *[ ] PROXY_INFO code 284
 
 	// Unknown holds AVPs not described above. They are re-encoded verbatim.
 	Unknown []diam.RawAVP
@@ -42,6 +45,11 @@ func (m *Middle) AppendAVPs(b []byte) []byte {
 	if m.OptLeaf != nil {
 		b, s = diam.BeginAVP(b, 34, diam.AVPFlagMandatory, 99999)
 		b = m.OptLeaf.AppendAVPs(b)
+		b = diam.EndAVP(b, s)
+	}
+	for i := range m.ProxyInfo {
+		b, s = diam.BeginAVP(b, 284, diam.AVPFlagMandatory, 0)
+		b = (&m.ProxyInfo[i]).AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
 	for _, a := range m.Unknown {
@@ -98,6 +106,15 @@ func (m *Middle) DecodeAVPs(data []byte) error {
 				continue
 			}
 			m.OptLeaf = &v
+		case 284: // PROXY_INFO code 284
+			var v base.ProxyInfo
+			if err := v.DecodeAVPs(a.Data); err != nil {
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP PROXY_INFO"}
+				}
+				continue
+			}
+			m.ProxyInfo = append(m.ProxyInfo, v)
 		default:
 			m.Unknown = append(m.Unknown, diam.Clone(a))
 		}
@@ -119,6 +136,11 @@ func (m *Middle) Validate() error {
 	if m.OptLeaf != nil {
 		if err := m.OptLeaf.Validate(); err != nil {
 			return diam.InGroup(err, 34)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)

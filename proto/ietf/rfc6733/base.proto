@@ -1,0 +1,531 @@
+// Diameter Base Protocol.
+//
+// Source: RFC 6733 (October 2012).
+//   Commands:      §5.3.1-5.3.2 (CER/CEA), §5.4.1-5.4.2 (DPR/DPA),
+//                  §5.5.1-5.5.2 (DWR/DWA), §8.3.1-8.3.2 (RAR/RAA),
+//                  §8.4.1-8.4.2 (STR/STA), §8.5.1-8.5.2 (ASR/ASA)
+//   Grouped AVPs:  §6.7.2 Proxy-Info, §6.11 Vendor-Specific-Application-Id,
+//                  §7.5 Failed-AVP, §7.6 Experimental-Result
+//   AVP table:     §4.5 (code, data type, flag rules), all rows
+//   Enumerations:  §5.4.3, §6.13, §8.7, §8.11, §8.12, §8.18; Termination-Cause
+//                  values 1-8 from the IANA registry that §8.15 points to
+//
+// Not here: the accounting commands ACR/ACA (§9.7); their AVPs are in the
+// dictionary because other applications use them. E2E-Sequence is not
+// defined by RFC 6733, which deprecated the end-to-end security framework
+// (§1.1.3).
+//
+// Each command and grouped message carries its RFC ABNF as a comment.
+syntax = "proto3";
+
+package godiam.base;
+
+import "diam/options.proto";
+
+option go_package = "github.com/hsdfat/go-diam/base";
+
+// Avp is the base protocol dictionary (RFC 6733 §4.5). Every AVP is defined
+// by the IETF (no Vendor-Id). The M-bit is set where the table says MUST.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  USER_NAME = 1 [(diam.def) = {m: true, type: UTF8_STRING}];
+  CLASS = 25 [(diam.def) = {m: true, type: OCTET_STRING}];
+  SESSION_TIMEOUT = 27 [(diam.def) = {m: true, type: UNSIGNED32}];
+  PROXY_STATE = 33 [(diam.def) = {m: true, type: OCTET_STRING}];
+  ACCT_SESSION_ID = 44 [(diam.def) = {m: true, type: OCTET_STRING}];
+  ACCT_MULTI_SESSION_ID = 50 [(diam.def) = {m: true, type: UTF8_STRING}];
+  EVENT_TIMESTAMP = 55 [(diam.def) = {m: true, type: TIME}];
+  ACCT_INTERIM_INTERVAL = 85 [(diam.def) = {m: true, type: UNSIGNED32}];
+  HOST_IP_ADDRESS = 257 [(diam.def) = {m: true, type: ADDRESS}];
+  AUTH_APPLICATION_ID = 258 [(diam.def) = {m: true, type: UNSIGNED32}];
+  ACCT_APPLICATION_ID = 259 [(diam.def) = {m: true, type: UNSIGNED32}];
+  VENDOR_SPECIFIC_APPLICATION_ID = 260 [(diam.def) = {m: true, type: GROUPED}];
+  REDIRECT_HOST_USAGE = 261 [(diam.def) = {m: true, type: ENUMERATED}];
+  REDIRECT_MAX_CACHE_TIME = 262 [(diam.def) = {m: true, type: UNSIGNED32}];
+  SESSION_ID = 263 [(diam.def) = {m: true, type: UTF8_STRING}];
+  ORIGIN_HOST = 264 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  SUPPORTED_VENDOR_ID = 265 [(diam.def) = {m: true, type: UNSIGNED32}];
+  VENDOR_ID = 266 [(diam.def) = {m: true, type: UNSIGNED32}];
+  // Firmware-Revision: M-bit MUST NOT be set.
+  FIRMWARE_REVISION = 267 [(diam.def) = {type: UNSIGNED32}];
+  RESULT_CODE = 268 [(diam.def) = {m: true, type: UNSIGNED32}];
+  // Product-Name: M-bit MUST NOT be set.
+  PRODUCT_NAME = 269 [(diam.def) = {type: UTF8_STRING}];
+  SESSION_BINDING = 270 [(diam.def) = {m: true, type: UNSIGNED32}];
+  SESSION_SERVER_FAILOVER = 271 [(diam.def) = {m: true, type: ENUMERATED}];
+  MULTI_ROUND_TIME_OUT = 272 [(diam.def) = {m: true, type: UNSIGNED32}];
+  DISCONNECT_CAUSE = 273 [(diam.def) = {m: true, type: ENUMERATED}];
+  AUTH_REQUEST_TYPE = 274 [(diam.def) = {m: true, type: ENUMERATED}];
+  AUTH_GRACE_PERIOD = 276 [(diam.def) = {m: true, type: UNSIGNED32}];
+  AUTH_SESSION_STATE = 277 [(diam.def) = {m: true, type: ENUMERATED}];
+  ORIGIN_STATE_ID = 278 [(diam.def) = {m: true, type: UNSIGNED32}];
+  FAILED_AVP = 279 [(diam.def) = {m: true, type: GROUPED}];
+  PROXY_HOST = 280 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  // Error-Message: M-bit MUST NOT be set.
+  ERROR_MESSAGE = 281 [(diam.def) = {type: UTF8_STRING}];
+  ROUTE_RECORD = 282 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  DESTINATION_REALM = 283 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  PROXY_INFO = 284 [(diam.def) = {m: true, type: GROUPED}];
+  RE_AUTH_REQUEST_TYPE = 285 [(diam.def) = {m: true, type: ENUMERATED}];
+  ACCOUNTING_SUB_SESSION_ID = 287 [(diam.def) = {m: true, type: UNSIGNED64}];
+  AUTHORIZATION_LIFETIME = 291 [(diam.def) = {m: true, type: UNSIGNED32}];
+  REDIRECT_HOST = 292 [(diam.def) = {m: true, type: DIAMETER_URI}];
+  DESTINATION_HOST = 293 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  // Error-Reporting-Host: M-bit MUST NOT be set.
+  ERROR_REPORTING_HOST = 294 [(diam.def) = {type: DIAMETER_IDENTITY}];
+  TERMINATION_CAUSE = 295 [(diam.def) = {m: true, type: ENUMERATED}];
+  ORIGIN_REALM = 296 [(diam.def) = {m: true, type: DIAMETER_IDENTITY}];
+  EXPERIMENTAL_RESULT = 297 [(diam.def) = {m: true, type: GROUPED}];
+  EXPERIMENTAL_RESULT_CODE = 298 [(diam.def) = {m: true, type: UNSIGNED32}];
+  // Inband-Security-Id is Unsigned32, not Enumerated (§6.10):
+  // NO_INBAND_SECURITY 0, TLS 1.
+  INBAND_SECURITY_ID = 299 [(diam.def) = {m: true, type: UNSIGNED32}];
+  ACCOUNTING_RECORD_TYPE = 480 [(diam.def) = {m: true, type: ENUMERATED}];
+  ACCOUNTING_REALTIME_REQUIRED = 483 [(diam.def) = {m: true, type: ENUMERATED}];
+  ACCOUNTING_RECORD_NUMBER = 485 [(diam.def) = {m: true, type: UNSIGNED32}];
+}
+
+// Auth-Session-State (§8.11).
+enum AuthSessionState {
+  AUTH_SESSION_STATE_STATE_MAINTAINED = 0;
+  AUTH_SESSION_STATE_NO_STATE_MAINTAINED = 1;
+}
+
+// Disconnect-Cause (§5.4.3).
+enum DisconnectCause {
+  DISCONNECT_CAUSE_REBOOTING = 0;
+  DISCONNECT_CAUSE_BUSY = 1;
+  DISCONNECT_CAUSE_DO_NOT_WANT_TO_TALK_TO_YOU = 2;
+}
+
+// Re-Auth-Request-Type (§8.12).
+enum ReAuthRequestType {
+  RE_AUTH_REQUEST_TYPE_AUTHORIZE_ONLY = 0;
+  RE_AUTH_REQUEST_TYPE_AUTHORIZE_AUTHENTICATE = 1;
+}
+
+// Auth-Request-Type (§8.7). The enumeration has no value 0.
+enum AuthRequestType {
+  AUTH_REQUEST_TYPE_UNSPECIFIED = 0;
+  AUTH_REQUEST_TYPE_AUTHENTICATE_ONLY = 1;
+  AUTH_REQUEST_TYPE_AUTHORIZE_ONLY = 2;
+  AUTH_REQUEST_TYPE_AUTHORIZE_AUTHENTICATE = 3;
+}
+
+// Termination-Cause (§8.15). Values are the DIAMETER_* entries 1-8 of the
+// IANA "Termination-Cause AVP Values" registry; there is no value 0.
+enum TerminationCause {
+  TERMINATION_CAUSE_UNSPECIFIED = 0;
+  TERMINATION_CAUSE_LOGOUT = 1;
+  TERMINATION_CAUSE_SERVICE_NOT_PROVIDED = 2;
+  TERMINATION_CAUSE_BAD_ANSWER = 3;
+  TERMINATION_CAUSE_ADMINISTRATIVE = 4;
+  TERMINATION_CAUSE_LINK_BROKEN = 5;
+  TERMINATION_CAUSE_AUTH_EXPIRED = 6;
+  TERMINATION_CAUSE_USER_MOVED = 7;
+  TERMINATION_CAUSE_SESSION_TIMEOUT = 8;
+}
+
+// Redirect-Host-Usage (§6.13).
+enum RedirectHostUsage {
+  REDIRECT_HOST_USAGE_DONT_CACHE = 0;
+  REDIRECT_HOST_USAGE_ALL_SESSION = 1;
+  REDIRECT_HOST_USAGE_ALL_REALM = 2;
+  REDIRECT_HOST_USAGE_REALM_AND_APPLICATION = 3;
+  REDIRECT_HOST_USAGE_ALL_APPLICATION = 4;
+  REDIRECT_HOST_USAGE_ALL_HOST = 5;
+  REDIRECT_HOST_USAGE_ALL_USER = 6;
+}
+
+// Session-Server-Failover (§8.18).
+enum SessionServerFailover {
+  SESSION_SERVER_FAILOVER_REFUSE_SERVICE = 0;
+  SESSION_SERVER_FAILOVER_TRY_AGAIN = 1;
+  SESSION_SERVER_FAILOVER_ALLOW_SERVICE = 2;
+  SESSION_SERVER_FAILOVER_TRY_AGAIN_ALLOW_SERVICE = 3;
+}
+
+// Proxy-Info ::= < AVP Header: 284 >
+//                { Proxy-Host }
+//                { Proxy-State }
+//              * [ AVP ]
+message ProxyInfo {
+  option (diam.extensible) = true;
+  string proxy_host = 1;
+  bytes proxy_state = 2;
+}
+
+// <Vendor-Specific-Application-Id> ::= < AVP Header: 260 >
+//                                      { Vendor-Id }
+//                                      [ Auth-Application-Id ]
+//                                      [ Acct-Application-Id ]
+message VendorSpecificApplicationId {
+  uint32 vendor_id = 1;
+  optional uint32 auth_application_id = 2;
+  optional uint32 acct_application_id = 3;
+}
+
+// Experimental-Result ::= < AVP Header: 297 >
+//                         { Vendor-Id }
+//                         { Experimental-Result-Code }
+message ExperimentalResult {
+  uint32 vendor_id = 1;
+  uint32 experimental_result_code = 2;
+}
+
+// <Failed-AVP> ::= < AVP Header: 279 >
+//               1* {AVP}
+//
+// The content is any AVP, so it is kept verbatim in Unknown.
+message FailedAvp {
+  option (diam.extensible) = true;
+}
+
+// <CER> ::= < Diameter Header: 257, REQ >
+//           { Origin-Host }
+//           { Origin-Realm }
+//        1* { Host-IP-Address }
+//           { Vendor-Id }
+//           { Product-Name }
+//           [ Origin-State-Id ]
+//         * [ Supported-Vendor-Id ]
+//         * [ Auth-Application-Id ]
+//         * [ Inband-Security-Id ]
+//         * [ Acct-Application-Id ]
+//         * [ Vendor-Specific-Application-Id ]
+//           [ Firmware-Revision ]
+//         * [ AVP ]
+message CapabilitiesExchangeRequest {
+  option (diam.command) = {
+    code: 257
+    request: true
+  };
+  option (diam.extensible) = true;
+  string origin_host = 1;
+  string origin_realm = 2;
+  repeated bytes host_ip_address = 3 [(diam.min) = 1];
+  uint32 vendor_id = 4;
+  string product_name = 5;
+  optional uint32 origin_state_id = 6;
+  repeated uint32 supported_vendor_id = 7;
+  repeated uint32 auth_application_id = 8;
+  repeated uint32 inband_security_id = 9;
+  repeated uint32 acct_application_id = 10;
+  repeated VendorSpecificApplicationId vendor_specific_application_id = 11;
+  optional uint32 firmware_revision = 12;
+}
+
+// <CEA> ::= < Diameter Header: 257 >
+//           { Result-Code }
+//           { Origin-Host }
+//           { Origin-Realm }
+//        1* { Host-IP-Address }
+//           { Vendor-Id }
+//           { Product-Name }
+//           [ Origin-State-Id ]
+//           [ Error-Message ]
+//           [ Failed-AVP ]
+//         * [ Supported-Vendor-Id ]
+//         * [ Auth-Application-Id ]
+//         * [ Inband-Security-Id ]
+//         * [ Acct-Application-Id ]
+//         * [ Vendor-Specific-Application-Id ]
+//           [ Firmware-Revision ]
+//         * [ AVP ]
+message CapabilitiesExchangeAnswer {
+  option (diam.command) = {code: 257};
+  option (diam.extensible) = true;
+  uint32 result_code = 1;
+  string origin_host = 2;
+  string origin_realm = 3;
+  repeated bytes host_ip_address = 4 [(diam.min) = 1];
+  uint32 vendor_id = 5;
+  string product_name = 6;
+  optional uint32 origin_state_id = 7;
+  optional string error_message = 8;
+  optional FailedAvp failed_avp = 9;
+  repeated uint32 supported_vendor_id = 10;
+  repeated uint32 auth_application_id = 11;
+  repeated uint32 inband_security_id = 12;
+  repeated uint32 acct_application_id = 13;
+  repeated VendorSpecificApplicationId vendor_specific_application_id = 14;
+  optional uint32 firmware_revision = 15;
+}
+
+// <DWR>  ::= < Diameter Header: 280, REQ >
+//            { Origin-Host }
+//            { Origin-Realm }
+//            [ Origin-State-Id ]
+//          * [ AVP ]
+message DeviceWatchdogRequest {
+  option (diam.command) = {
+    code: 280
+    request: true
+  };
+  option (diam.extensible) = true;
+  string origin_host = 1;
+  string origin_realm = 2;
+  optional uint32 origin_state_id = 3;
+}
+
+// <DWA>  ::= < Diameter Header: 280 >
+//            { Result-Code }
+//            { Origin-Host }
+//            { Origin-Realm }
+//            [ Error-Message ]
+//            [ Failed-AVP ]
+//            [ Origin-State-Id ]
+//          * [ AVP ]
+message DeviceWatchdogAnswer {
+  option (diam.command) = {code: 280};
+  option (diam.extensible) = true;
+  uint32 result_code = 1;
+  string origin_host = 2;
+  string origin_realm = 3;
+  optional string error_message = 4;
+  optional FailedAvp failed_avp = 5;
+  optional uint32 origin_state_id = 6;
+}
+
+// <DPR>  ::= < Diameter Header: 282, REQ >
+//            { Origin-Host }
+//            { Origin-Realm }
+//            { Disconnect-Cause }
+//          * [ AVP ]
+message DisconnectPeerRequest {
+  option (diam.command) = {
+    code: 282
+    request: true
+  };
+  option (diam.extensible) = true;
+  string origin_host = 1;
+  string origin_realm = 2;
+  DisconnectCause disconnect_cause = 3;
+}
+
+// <DPA>  ::= < Diameter Header: 282 >
+//            { Result-Code }
+//            { Origin-Host }
+//            { Origin-Realm }
+//            [ Error-Message ]
+//            [ Failed-AVP ]
+//          * [ AVP ]
+message DisconnectPeerAnswer {
+  option (diam.command) = {code: 282};
+  option (diam.extensible) = true;
+  uint32 result_code = 1;
+  string origin_host = 2;
+  string origin_realm = 3;
+  optional string error_message = 4;
+  optional FailedAvp failed_avp = 5;
+}
+
+// <RAR>  ::= < Diameter Header: 258, REQ, PXY >
+//            < Session-Id >
+//            { Origin-Host }
+//            { Origin-Realm }
+//            { Destination-Realm }
+//            { Destination-Host }
+//            { Auth-Application-Id }
+//            { Re-Auth-Request-Type }
+//            [ User-Name ]
+//            [ Origin-State-Id ]
+//          * [ Proxy-Info ]
+//          * [ Route-Record ]
+//          * [ AVP ]
+message ReAuthRequest {
+  option (diam.command) = {
+    code: 258
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  string origin_host = 2;
+  string origin_realm = 3;
+  string destination_realm = 4;
+  string destination_host = 5;
+  uint32 auth_application_id = 6;
+  ReAuthRequestType re_auth_request_type = 7;
+  optional string user_name = 8;
+  optional uint32 origin_state_id = 9;
+  repeated ProxyInfo proxy_info = 10;
+  repeated string route_record = 11;
+}
+
+// <RAA>  ::= < Diameter Header: 258, PXY >
+//            < Session-Id >
+//            { Result-Code }
+//            { Origin-Host }
+//            { Origin-Realm }
+//            [ User-Name ]
+//            [ Origin-State-Id ]
+//            [ Error-Message ]
+//            [ Error-Reporting-Host ]
+//            [ Failed-AVP ]
+//          * [ Redirect-Host ]
+//            [ Redirect-Host-Usage ]
+//            [ Redirect-Max-Cache-Time ]
+//          * [ Proxy-Info ]
+//          * [ AVP ]
+message ReAuthAnswer {
+  option (diam.command) = {
+    code: 258
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  uint32 result_code = 2;
+  string origin_host = 3;
+  string origin_realm = 4;
+  optional string user_name = 5;
+  optional uint32 origin_state_id = 6;
+  optional string error_message = 7;
+  optional string error_reporting_host = 8;
+  optional FailedAvp failed_avp = 9;
+  repeated string redirect_host = 10;
+  optional RedirectHostUsage redirect_host_usage = 11;
+  optional uint32 redirect_max_cache_time = 12;
+  repeated ProxyInfo proxy_info = 13;
+}
+
+// <STR>  ::= < Diameter Header: 275, REQ, PXY >
+//            < Session-Id >
+//            { Origin-Host }
+//            { Origin-Realm }
+//            { Destination-Realm }
+//            { Auth-Application-Id }
+//            { Termination-Cause }
+//            [ User-Name ]
+//            [ Destination-Host ]
+//          * [ Class ]
+//            [ Origin-State-Id ]
+//          * [ Proxy-Info ]
+//          * [ Route-Record ]
+//          * [ AVP ]
+message SessionTerminationRequest {
+  option (diam.command) = {
+    code: 275
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  string origin_host = 2;
+  string origin_realm = 3;
+  string destination_realm = 4;
+  uint32 auth_application_id = 5;
+  TerminationCause termination_cause = 6;
+  optional string user_name = 7;
+  optional string destination_host = 8;
+  repeated bytes class = 9;
+  optional uint32 origin_state_id = 10;
+  repeated ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
+
+// <STA> ::= < Diameter Header: 275, PXY >
+//           < Session-Id >
+//           { Result-Code }
+//           { Origin-Host }
+//           { Origin-Realm }
+//           [ User-Name ]
+//         * [ Class ]
+//           [ Error-Message ]
+//           [ Error-Reporting-Host ]
+//           [ Failed-AVP ]
+//           [ Origin-State-Id ]
+//         * [ Redirect-Host ]
+//           [ Redirect-Host-Usage ]
+//           [ Redirect-Max-Cache-Time ]
+//         * [ Proxy-Info ]
+//         * [ AVP ]
+message SessionTerminationAnswer {
+  option (diam.command) = {
+    code: 275
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  uint32 result_code = 2;
+  string origin_host = 3;
+  string origin_realm = 4;
+  optional string user_name = 5;
+  repeated bytes class = 6;
+  optional string error_message = 7;
+  optional string error_reporting_host = 8;
+  optional FailedAvp failed_avp = 9;
+  optional uint32 origin_state_id = 10;
+  repeated string redirect_host = 11;
+  optional RedirectHostUsage redirect_host_usage = 12;
+  optional uint32 redirect_max_cache_time = 13;
+  repeated ProxyInfo proxy_info = 14;
+}
+
+// <ASR>  ::= < Diameter Header: 274, REQ, PXY >
+//            < Session-Id >
+//            { Origin-Host }
+//            { Origin-Realm }
+//            { Destination-Realm }
+//            { Destination-Host }
+//            { Auth-Application-Id }
+//            [ User-Name ]
+//            [ Origin-State-Id ]
+//          * [ Proxy-Info ]
+//          * [ Route-Record ]
+//          * [ AVP ]
+message AbortSessionRequest {
+  option (diam.command) = {
+    code: 274
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  string origin_host = 2;
+  string origin_realm = 3;
+  string destination_realm = 4;
+  string destination_host = 5;
+  uint32 auth_application_id = 6;
+  optional string user_name = 7;
+  optional uint32 origin_state_id = 8;
+  repeated ProxyInfo proxy_info = 9;
+  repeated string route_record = 10;
+}
+
+// <ASA>  ::= < Diameter Header: 274, PXY >
+//            < Session-Id >
+//            { Result-Code }
+//            { Origin-Host }
+//            { Origin-Realm }
+//            [ User-Name ]
+//            [ Origin-State-Id ]
+//            [ Error-Message ]
+//            [ Error-Reporting-Host ]
+//            [ Failed-AVP ]
+//          * [ Redirect-Host ]
+//            [ Redirect-Host-Usage ]
+//            [ Redirect-Max-Cache-Time ]
+//          * [ Proxy-Info ]
+//          * [ AVP ]
+message AbortSessionAnswer {
+  option (diam.command) = {
+    code: 274
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  uint32 result_code = 2;
+  string origin_host = 3;
+  string origin_realm = 4;
+  optional string user_name = 5;
+  optional uint32 origin_state_id = 6;
+  optional string error_message = 7;
+  optional string error_reporting_host = 8;
+  optional FailedAvp failed_avp = 9;
+  repeated string redirect_host = 10;
+  optional RedirectHostUsage redirect_host_usage = 11;
+  optional uint32 redirect_max_cache_time = 12;
+  repeated ProxyInfo proxy_info = 13;
+}

@@ -1,11 +1,12 @@
-// Generator fixture: groups nested across files, a fixed-position AVP and a
-// per-use M-bit override.
+// Generator fixture: groups nested across files and packages, a
+// fixed-position AVP and a per-use M-bit override.
 syntax = "proto3";
 
 package gentest.v1;
 
 import "diam/options.proto";
 import "gentest/v1/types.proto";
+import "ietf/rfc6733/base.proto";
 
 option go_package = "github.com/hsdfat/go-diam/internal/gentest";
 
@@ -18,11 +19,13 @@ enum NestedAvp {
   NESTED_SESSION = 110 [(diam.def) = {vendor: 99999, m: true, type: UTF8_STRING}];
 }
 
-// Middle ::= < AVP Header: 101 > [ Inner-U32 ] [ Opt-Leaf ]
-// Opt-Leaf and Leaf come from types.proto.
+// Middle ::= < AVP Header: 101 > [ Inner-U32 ] [ Opt-Leaf ] * [ Proxy-Info ]
+// Opt-Leaf and Leaf come from types.proto; Proxy-Info is the base protocol
+// group, a type from another Go package.
 message Middle {
   optional uint32 inner_u32 = 1;
   optional Leaf opt_leaf = 2;
+  repeated godiam.base.ProxyInfo proxy_info = 3;
 }
 
 // Outer ::= < AVP Header: 100 > { Middle } [ Inner-U32 ]

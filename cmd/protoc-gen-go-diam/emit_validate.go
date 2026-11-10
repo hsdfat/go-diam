@@ -17,6 +17,16 @@ import (
 //  6. violations inside nested groups, with the group's code added to Path
 //  7. an unknown AVP with the M-bit
 func genValidate(g *protogen.GeneratedFile, m *message) {
+	if len(m.fields) == 0 {
+		// A grammar with no named AVP, such as Failed-AVP ::= 1* {AVP}, is a
+		// container for any AVP: its content is data, not unknown AVPs of
+		// this message, so the M-bit rule of CheckUnknown does not apply.
+		g.P("// Validate always succeeds: the grammar names no AVP, so every AVP in")
+		g.P("// Unknown is content, whatever its M-bit.")
+		g.P("func (m *", m.name, ") Validate() error { return nil }")
+		g.P()
+		return
+	}
 	g.P("// Validate checks m against its grammar and returns the first violation")
 	g.P("// as a *diam.AVPError. Required presence is checked on decoded messages")
 	g.P("// only: a zero value is a valid encoding, so a hand-built message has")
