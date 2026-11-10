@@ -1064,6 +1064,15 @@ func (m *TestAnswer) Unmarshal(b []byte) error {
 	return m.DecodeAVPs(avps)
 }
 
+// NewTestAnswerFor returns the answer to req: the request's header
+// identifiers with the R and T bits cleared, and its Session-Id.
+// Every other AVP is left for the caller to set.
+func NewTestAnswerFor(req *TestRequest) *TestAnswer {
+	ans := &TestAnswer{Header: diam.AnswerHeader(&req.Header)}
+	ans.SessionId = req.SessionId
+	return ans
+}
+
 func init() {
 	diam.Register(99999, 1, true, func() diam.Message { return new(TestRequest) })
 	diam.Register(99999, 1, false, func() diam.Message { return new(TestAnswer) })

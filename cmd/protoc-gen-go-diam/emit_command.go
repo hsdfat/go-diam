@@ -75,3 +75,41 @@ func genRegister(g *protogen.GeneratedFile, msgs []*message) {
 	}
 	g.P("}")
 }
+
+// sessionField returns the field declared as session_id, if any.
+func sessionField(m *message) *field {
+	for _, fd := range m.fields {
+		if fd.f.Desc.Name() == "session_id" {
+			return fd
+		}
+	}
+	return nil
+}
+
+// genAnswerConstructors emits New<Answer>For for every request that has an
+// answer with the same command code and application id in the same file.
+func genAnswerConstructors(g *protogen.GeneratedFile, msgs []*message) {
+	for _, req := range msgs {
+		if req.cmd == nil || !req.cmd.GetRequest() {
+			continue
+		}
+		for _, ans := range msgs {
+			if ans.cmd == nil || ans.cmd.GetRequest() ||
+				ans.cmd.GetCode() != req.cmd.GetCode() || ans.cmd.GetAppId() != req.cmd.GetAppId() {
+				continue
+			}
+			copySession := sessionField(req) != nil && sessionField(ans) != nil
+			g.P("// New", ans.name, "For returns the answer to req: the request's header")
+			g.P("// identifiers with the R and T bits cleared", map[bool]string{true: ", and its Session-Id", false: ""}[copySession], ".")
+			g.P("// Every other AVP is left for the caller to set.")
+			g.P("func New", ans.name, "For(req *", req.name, ") *", ans.name, " {")
+			g.P("ans := &", ans.name, "{Header: ", diamIdent(g, "AnswerHeader"), "(&req.Header)}")
+			if copySession {
+				g.P("ans.", sessionField(ans).f.GoName, " = req.", sessionField(req).f.GoName)
+			}
+			g.P("return ans")
+			g.P("}")
+			g.P()
+		}
+	}
+}

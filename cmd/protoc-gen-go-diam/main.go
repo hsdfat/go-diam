@@ -76,6 +76,7 @@ func generateFile(gen *protogen.Plugin, d *dict, f *protogen.File) error {
 			genCommand(g, msg)
 		}
 	}
+	genAnswerConstructors(g, msgs)
 	genRegister(g, msgs)
 	return nil
 }
