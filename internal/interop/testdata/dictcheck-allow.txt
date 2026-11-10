@@ -1,0 +1,5 @@
+# Reviewed disagreements between go-diam's dictionaries and go-diameter's.
+#
+# One per line:  <code> <vendor> <field> <spec clause and reason>
+# <field> is "type" or "m". A line that no longer matches a disagreement
+# fails the test, so this file cannot rot.
