@@ -4,3 +4,19 @@
 # <field> is "name", "vendor", "type" or "m". A line that no longer matches a disagreement
 # fails the test, so this file cannot rot.
 44 0 name RFC 6733 §4.5 and §9.8.4 name this AVP Acct-Session-Id; go-diameter calls it Accounting-Session-Id
+#
+# S6a/S6d (proto/3gpp/ts29272/s6a.proto, TS 29.272 V18.7.0). Table 7.3.1/1
+# gives the flag rules of the S6a AVPs; table 7.3.1/2 NOTE 1 says its M-bit
+# column overrides the defining specification of a re-used AVP.
+1612 10415 m TS 29.272 table 7.3.1/1: Active-APN is V, M must not; go-diameter sets M
+1620 10415 m TS 29.272 table 7.3.1/1: Ext-PDP-Type is V, M must not; go-diameter sets M
+1621 10415 m TS 29.272 table 7.3.1/1: Ext-PDP-Address is V, M must not; go-diameter sets M
+1622 10415 m TS 29.272 table 7.3.1/1: MDT-Configuration is V, M must not; go-diameter sets M
+1490 10415 m TS 29.272 table 7.3.1/1: IDR-Flags is M, V; go-diameter leaves M clear
+1032 10415 m TS 29.272 table 7.3.1/2: RAT-Type "Must set" in S6a; go-diameter has the TS 29.212 rule (V only)
+857 10415 m TS 29.272 table 7.3.1/2: Charged-Party "Must not set" in S6a; go-diameter has the TS 32.299 rule (V,M)
+2319 10415 m TS 29.272 table 7.3.1/2: User-CSG-Information "Must not set" in S6a; go-diameter has the TS 32.299 rule (V,M)
+2405 10415 m TS 29.272 table 7.3.1/2: GMLC-Address "Must not set" in S6a; go-diameter sets M
+600 10415 m TS 29.272 table 7.3.1/2: Visited-Network-Identifier "Must not set" in S6a; go-diameter has the TS 29.229 rule (M,V)
+652 0 type RFC 8583 §7.3: Load-Value is Unsigned64; go-diameter has Unsigned32
+1483 10415 name TS 29.272 §7.3.94 names this AVP Service-Type; go-diameter calls it TGPP-Service-Type to keep it apart from RADIUS Service-Type (6)

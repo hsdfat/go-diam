@@ -66,7 +66,15 @@ func schemaImage(t *testing.T) *descriptorpb.FileDescriptorSet {
 // allowList reads the reviewed disagreements, keyed "<code> <vendor> <field>".
 func allowList(t *testing.T) map[string]string {
 	t.Helper()
-	f, err := os.Open(filepath.Join("testdata", "dictcheck-allow.txt"))
+	return listFile(t, "dictcheck-allow.txt", 4)
+}
+
+// listFile reads a testdata list keyed "<code> <vendor> <word>": one entry
+// per line with at least minFields words, the words after the key being its
+// reason. Blank lines and lines starting with # are skipped.
+func listFile(t *testing.T, name string, minFields int) map[string]string {
+	t.Helper()
+	f, err := os.Open(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +87,8 @@ func allowList(t *testing.T) map[string]string {
 			continue
 		}
 		parts := strings.Fields(line)
-		if len(parts) < 4 {
-			t.Fatalf("dictcheck-allow.txt:%d: want <code> <vendor> <field> <spec clause>, got %q", n, line)
+		if len(parts) < minFields {
+			t.Fatalf("%s:%d: want at least %d fields, got %q", name, n, minFields, line)
 		}
 		out[strings.Join(parts[:3], " ")] = strings.Join(parts[3:], " ")
 	}
@@ -91,9 +99,18 @@ func allowList(t *testing.T) map[string]string {
 }
 
 // dictName turns a specification AVP name into the form dictionary entries
-// use: "Origin-State-Id" -> "ORIGIN_STATE_ID".
+// use: "Origin-State-Id" -> "ORIGIN_STATE_ID". A proto identifier cannot
+// start with a digit, so a leading "3GPP" is spelt "TGPP" and "5QI" is
+// spelt "FIVE_QI" (proto/3gpp/ts29272/s6a.proto).
 func dictName(name string) string {
-	return strings.ToUpper(strings.NewReplacer("-", "_", " ", "_").Replace(name))
+	n := strings.ToUpper(strings.NewReplacer("-", "_", " ", "_").Replace(name))
+	switch {
+	case strings.HasPrefix(n, "3GPP"):
+		n = "TGPP" + n[len("3GPP"):]
+	case strings.HasPrefix(n, "5QI"):
+		n = "FIVE_QI" + n[len("5QI"):]
+	}
+	return n
 }
 
 // fiorixAVP finds an AVP by exact code and vendor in any application of
@@ -117,6 +134,8 @@ func fiorixAVP(code, vendor uint32) *dict.AVP {
 func TestDictionaryAgreesWithGoDiameter(t *testing.T) {
 	allow := allowList(t)
 	used := map[string]bool{}
+	wantAbsent := listFile(t, "dictcheck-absent.txt", 3)
+	gotAbsent := map[string]bool{}
 	checked, absent := 0, 0
 
 	for _, file := range schemaImage(t).File {
@@ -136,6 +155,11 @@ func TestDictionaryAgreesWithGoDiameter(t *testing.T) {
 				theirs := fiorixAVP(code, vendor)
 				if theirs == nil {
 					absent++
+					key := fmt.Sprintf("%d %d %s", code, vendor, v.GetName())
+					gotAbsent[key] = true
+					if _, ok := wantAbsent[key]; !ok {
+						t.Errorf("%s %s (code %d vendor %d) is not in go-diameter's dictionary: add %q to dictcheck-absent.txt", file.GetName(), v.GetName(), code, vendor, key)
+					}
 					continue
 				}
 				checked++
@@ -172,6 +196,11 @@ func TestDictionaryAgreesWithGoDiameter(t *testing.T) {
 	for key, clause := range allow {
 		if !used[key] {
 			t.Errorf("dictcheck-allow.txt: %q (%s) no longer matches a disagreement; remove it", key, clause)
+		}
+	}
+	for key := range wantAbsent {
+		if !gotAbsent[key] {
+			t.Errorf("dictcheck-absent.txt: %q is no longer an entry missing from go-diameter's dictionary; remove it", key)
 		}
 	}
 	if checked == 0 {

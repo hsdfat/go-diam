@@ -1,0 +1,2962 @@
+// S6a/S6d: MME/SGSN - HSS (Diameter application 16777251).
+//
+// Source: 3GPP TS 29.272 V18.7.0 (Release 18), published as
+// ETSI TS 129 272 V18.7.0 (2026-10).
+//   Commands:      §7.2.2 table 7.2.2/1, §7.2.3-7.2.18 (ULR/ULA, AIR/AIA,
+//                  CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA),
+//                  the S6a/S6d (16777251) form of each
+//   AVP table:     §7.3.1 table 7.3.1/1, all rows (including the S7a/S7d and
+//                  S13/S13' AVPs, so those applications can import this file)
+//   Grouped AVPs:  §7.3.2-7.3.252, every grammar reachable from the commands
+//   Enumerations:  the clause of each Enumerated AVP in §7.3
+//
+// AVPs that TS 29.272 re-uses (table 7.3.1/2) are in this dictionary too,
+// transcribed from the specification named next to each entry. Where table
+// 7.3.1/2 gives an M-bit ("Must set" / "Must not set"), that value is the
+// one here: its NOTE 1 says it overrides the defining specification. This is
+// why they are not imported from shared files: the same AVP carries a
+// different M-bit in S6a than in its own application. Grouped AVPs defined
+// elsewhere carry their grammar from that specification:
+//   TS 29.229 V18.1.0 §6.3.29          Supported-Features
+//   TS 29.212 V18.2.0 §5.3.32          Allocation-Retention-Priority (also
+//                                      repeated in TS 29.272 §7.3.40)
+//   TS 32.299 V18.0.0 §7.2.240A        User-CSG-Information
+//   TS 29.336 V18.2.0 §8.4.15, 8.4.24, 8.4.30, 8.4.37, 8.4.47, 8.4.74,
+//                     8.4.76, 8.4.77   Location-Information-Configuration,
+//                                      Monitoring-Event-Config-Status,
+//                                      Scheduled-Communication-Time,
+//                                      Service-Result, Service-Report,
+//                                      MTC-Provider-Info,
+//                                      PDN-Connectivity-Status-Configuration
+//                                      and -Report
+//   TS 29.128 V18.0.0 §6.4.32          Idle-Status-Indication
+//   RFC 4004 §7.11                     MIP-Home-Agent-Host
+//   RFC 7683 §7.1, §7.3                OC-Supported-Features, OC-OLR
+//   RFC 8583 §7.1                      Load
+// TS 29.272 gives its own S6a grammar for AESE-Communication-Pattern,
+// Communication-Pattern-Set, Monitoring-Event-Configuration,
+// Monitoring-Event-Report, UE-Reachability-Configuration, Supported-Services,
+// ProSe-Subscription-Data and MIP6-Agent-Info (§7.3.180, 7.3.193-7.3.197,
+// 7.3.199, 7.3.45); those are used, not the defining specifications'.
+//
+// Release compatibility (design §5.3a): every AVP that is required here is
+// also required in TS 29.272 V8.14.0 (Release 8), or sits in a grouped AVP
+// that Release 8 does not have. No exception is needed.
+//
+// Rulings where the specification text disagrees with itself:
+//   - Area-Scope: §7.3.138 heads its ABNF "AVP header: 1623"; table 7.3.1/1
+//     gives 1624, and 1623 is Job-Type. 1624 is used.
+//   - Additional-Context-ID: table 7.3.1/1 name; the ABNF of
+//     APN-Configuration-Profile writes Additional-Context-Identifier.
+//   - MME-Location-Information: table 7.3.1/1 writes "MME-Location
+//     Information".
+//   - ABNF spellings "IDR- Flags", "Collection-Period- RRM-LTE",
+//     "Re-synchronization-Info" and "Monitoring Event Report" are read as
+//     IDR-Flags, Collection-Period-RRM-LTE, Re-Synchronization-Info and
+//     Monitoring-Event-Report.
+//   - Enumerated AVPs whose values TS 29.272 delegates to TS 32.422
+//     (Trace-Depth, Job-Type, Report-Interval, Report-Amount,
+//     Logging-Interval, Logging-Duration, Measurement-Period-*,
+//     Collection-Period-*) are plain int32 fields.
+//   - AVPs with no flag rule in their defining RFC and none in table
+//     7.3.1/2 (MIP6-Home-Link-Prefix, Time-Of-Day-Start/-End,
+//     Day-Of-Week-Mask) are sent with the M-bit clear: a receiver that does
+//     not know them then ignores them instead of rejecting the message.
+//   - Dictionary names are the AVP name in upper case with "-" and " " as
+//     "_" (LCS-PrivacyException -> LCS_PRIVACYEXCEPTION), and TGPP / FIVE_QI
+//     for the names that start with a digit (3GPP2-MEID,
+//     3GPP-Charging-Characteristics, 5QI).
+//
+// Not here: the S13/S13' commands ECR/ECA (§7.2.19-7.2.20) and the S7a/S7d
+// commands UVR/UVA, CVR/CVA and the 16777308 forms of IDR/DSR/RSR
+// (§7.2.9-7.2.24); their AVPs are in the dictionary.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.s6a;
+
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/s6a";
+
+// Avp is the S6a/S6d dictionary of 3GPP AVPs (vendor 10415): table 7.3.1/1,
+// then the re-used 3GPP AVPs of table 7.3.1/2 and the AVPs inside their
+// grammars. The M-bit is set where the flag rules say "Must"; "May" is left
+// clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  SUBSCRIPTION_DATA = 1400 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TERMINAL_INFORMATION = 1401 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  IMEI = 1402 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  SOFTWARE_VERSION = 1403 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  QOS_SUBSCRIBED = 1404 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  ULR_FLAGS = 1405 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ULA_FLAGS = 1406 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  VISITED_PLMN_ID = 1407 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  REQUESTED_EUTRAN_AUTHENTICATION_INFO = 1408 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  REQUESTED_UTRAN_GERAN_AUTHENTICATION_INFO = 1409 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  NUMBER_OF_REQUESTED_VECTORS = 1410 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  RE_SYNCHRONIZATION_INFO = 1411 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  IMMEDIATE_RESPONSE_PREFERRED = 1412 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  AUTHENTICATION_INFO = 1413 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  E_UTRAN_VECTOR = 1414 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  UTRAN_VECTOR = 1415 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  GERAN_VECTOR = 1416 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  NETWORK_ACCESS_MODE = 1417 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  HPLMN_ODB = 1418 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ITEM_NUMBER = 1419 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  CANCELLATION_TYPE = 1420 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  DSR_FLAGS = 1421 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  DSA_FLAGS = 1422 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  CONTEXT_IDENTIFIER = 1423 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SUBSCRIBER_STATUS = 1424 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  OPERATOR_DETERMINED_BARRING = 1425 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ACCESS_RESTRICTION_DATA = 1426 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  APN_OI_REPLACEMENT = 1427 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  ALL_APN_CONFIGURATIONS_INCLUDED_INDICATOR = 1428 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  APN_CONFIGURATION_PROFILE = 1429 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  APN_CONFIGURATION = 1430 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  EPS_SUBSCRIBED_QOS_PROFILE = 1431 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  VPLMN_DYNAMIC_ADDRESS_ALLOWED = 1432 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  STN_SR = 1433 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // table 7.3.1/1 writes the type as "Enumerate"
+  ALERT_REASON = 1434 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  AMBR = 1435 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  CSG_SUBSCRIPTION_DATA = 1436 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  CSG_ID = 1437 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  PDN_GW_ALLOCATION_TYPE = 1438 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  EXPIRATION_DATE = 1439 [(diam.def) = {vendor: 10415, m: true, type: TIME}];
+  RAT_FREQUENCY_SELECTION_PRIORITY_ID = 1440 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  IDA_FLAGS = 1441 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  PUA_FLAGS = 1442 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  NOR_FLAGS = 1443 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  USER_ID = 1444 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  EQUIPMENT_STATUS = 1445 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  REGIONAL_SUBSCRIPTION_ZONE_CODE = 1446 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  RAND = 1447 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  XRES = 1448 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  AUTN = 1449 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  KASME = 1450 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  TRACE_COLLECTION_ENTITY = 1452 [(diam.def) = {vendor: 10415, m: true, type: ADDRESS}];
+  KC = 1453 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SRES = 1454 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  PDN_TYPE = 1456 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  ROAMING_RESTRICTED_DUE_TO_UNSUPPORTED_FEATURE = 1457 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  TRACE_DATA = 1458 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TRACE_REFERENCE = 1459 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  TRACE_DEPTH = 1462 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  TRACE_NE_TYPE_LIST = 1463 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  TRACE_INTERFACE_LIST = 1464 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  TRACE_EVENT_LIST = 1465 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  OMC_ID = 1466 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  GPRS_SUBSCRIPTION_DATA = 1467 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  COMPLETE_DATA_LIST_INCLUDED_INDICATOR = 1468 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  PDP_CONTEXT = 1469 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  PDP_TYPE = 1470 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // 3GPP2-MEID
+  TGPP2_MEID = 1471 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SPECIFIC_APN_INFO = 1472 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  LCS_INFO = 1473 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  GMLC_NUMBER = 1474 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  LCS_PRIVACYEXCEPTION = 1475 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SS_CODE = 1476 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SS_STATUS = 1477 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  NOTIFICATION_TO_UE_USER = 1478 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  EXTERNAL_CLIENT = 1479 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  CLIENT_IDENTITY = 1480 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  GMLC_RESTRICTION = 1481 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  PLMN_CLIENT = 1482 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  SERVICE_TYPE = 1483 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SERVICETYPEIDENTITY = 1484 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MO_LR = 1485 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TELESERVICE_LIST = 1486 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TS_CODE = 1487 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  CALL_BARRING_INFO = 1488 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SGSN_NUMBER = 1489 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  IDR_FLAGS = 1490 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ICS_INDICATOR = 1491 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  IMS_VOICE_OVER_PS_SESSIONS_SUPPORTED = 1492 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  HOMOGENEOUS_SUPPORT_OF_IMS_VOICE_OVER_PS_SESSIONS = 1493 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  LAST_UE_ACTIVITY_TIME = 1494 [(diam.def) = {vendor: 10415, type: TIME}];
+  EPS_USER_STATE = 1495 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  EPS_LOCATION_INFORMATION = 1496 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MME_USER_STATE = 1497 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SGSN_USER_STATE = 1498 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  USER_STATE = 1499 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // table 7.3.1/1 spells it "MME-Location Information"; clause 7.3.115 and the ABNF use MME-Location-Information
+  MME_LOCATION_INFORMATION = 1600 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SGSN_LOCATION_INFORMATION = 1601 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  E_UTRAN_CELL_GLOBAL_IDENTITY = 1602 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  TRACKING_AREA_IDENTITY = 1603 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  CELL_GLOBAL_IDENTITY = 1604 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  ROUTING_AREA_IDENTITY = 1605 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  LOCATION_AREA_IDENTITY = 1606 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SERVICE_AREA_IDENTITY = 1607 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  GEOGRAPHICAL_INFORMATION = 1608 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  GEODETIC_INFORMATION = 1609 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  CURRENT_LOCATION_RETRIEVED = 1610 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  AGE_OF_LOCATION_INFORMATION = 1611 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  ACTIVE_APN = 1612 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ERROR_DIAGNOSTIC = 1614 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  EXT_PDP_ADDRESS = 1621 [(diam.def) = {vendor: 10415, type: ADDRESS}];
+  UE_SRVCC_CAPABILITY = 1615 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  MPS_PRIORITY = 1616 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  VPLMN_LIPA_ALLOWED = 1617 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  LIPA_PERMISSION = 1618 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SUBSCRIBED_PERIODIC_RAU_TAU_TIMER = 1619 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  EXT_PDP_TYPE = 1620 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SIPTO_PERMISSION = 1613 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  MDT_CONFIGURATION = 1622 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  JOB_TYPE = 1623 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // clause 7.3.138 heads the ABNF "AVP header: 1623"; table 7.3.1/1 gives 1624 and 1623 is Job-Type
+  AREA_SCOPE = 1624 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  LIST_OF_MEASUREMENTS = 1625 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  REPORTING_TRIGGER = 1626 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  REPORT_INTERVAL = 1627 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  REPORT_AMOUNT = 1628 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  EVENT_THRESHOLD_RSRP = 1629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  EVENT_THRESHOLD_RSRQ = 1630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  LOGGING_INTERVAL = 1631 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  LOGGING_DURATION = 1632 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  RELAY_NODE_INDICATOR = 1633 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  MDT_USER_CONSENT = 1634 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  PUR_FLAGS = 1635 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SUBSCRIBED_VSRVCC = 1636 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  EQUIVALENT_PLMN_LIST = 1637 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  CLR_FLAGS = 1638 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  UVR_FLAGS = 1639 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  UVA_FLAGS = 1640 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  VPLMN_CSG_SUBSCRIPTION_DATA = 1641 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  TIME_ZONE = 1642 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  A_MSISDN = 1643 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  MME_NUMBER_FOR_MT_SMS = 1645 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SMS_REGISTER_REQUEST = 1648 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  LOCAL_TIME_ZONE = 1649 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  DAYLIGHT_SAVING_TIME = 1650 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SUBSCRIPTION_DATA_FLAGS = 1654 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  MEASUREMENT_PERIOD_LTE = 1655 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  MEASUREMENT_PERIOD_UMTS = 1656 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  COLLECTION_PERIOD_RRM_LTE = 1657 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  COLLECTION_PERIOD_RRM_UMTS = 1658 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  POSITIONING_METHOD = 1659 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  MEASUREMENT_QUANTITY = 1660 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  EVENT_THRESHOLD_EVENT_1F = 1661 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  EVENT_THRESHOLD_EVENT_1I = 1662 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  RESTORATION_PRIORITY = 1663 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SGS_MME_IDENTITY = 1664 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  SIPTO_LOCAL_NETWORK_PERMISSION = 1665 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  COUPLED_NODE_DIAMETER_ID = 1666 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  WLAN_OFFLOADABILITY = 1667 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  WLAN_OFFLOADABILITY_EUTRAN = 1668 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  WLAN_OFFLOADABILITY_UTRAN = 1669 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  RESET_ID = 1670 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  MDT_ALLOWED_PLMN_ID = 1671 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  ADJACENT_PLMNS = 1672 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ADJACENT_ACCESS_RESTRICTION_DATA = 1673 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  DL_BUFFERING_SUGGESTED_PACKET_COUNT = 1674 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  IMSI_GROUP_ID = 1675 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  GROUP_SERVICE_ID = 1676 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  GROUP_PLMN_ID = 1677 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  LOCAL_GROUP_ID = 1678 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  AIR_FLAGS = 1679 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  UE_USAGE_TYPE = 1680 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  NON_IP_PDN_TYPE_INDICATOR = 1681 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  NON_IP_DATA_DELIVERY_MECHANISM = 1682 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // the APN-Configuration-Profile ABNF (7.3.34) calls it Additional-Context-Identifier
+  ADDITIONAL_CONTEXT_ID = 1683 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SCEF_REALM = 1684 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SUBSCRIPTION_DATA_DELETION = 1685 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PREFERRED_DATA_MODE = 1686 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  EMERGENCY_INFO = 1687 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  V2X_SUBSCRIPTION_DATA = 1688 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  V2X_PERMISSION = 1689 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  PDN_CONNECTION_CONTINUITY = 1690 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  EDRX_CYCLE_LENGTH = 1691 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  EDRX_CYCLE_LENGTH_VALUE = 1692 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  UE_PC5_AMBR = 1693 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  MBSFN_AREA = 1694 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MBSFN_AREA_ID = 1695 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  CARRIER_FREQUENCY = 1696 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  RDS_INDICATOR = 1697 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SERVICE_GAP_TIME = 1698 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  AERIAL_UE_SUBSCRIPTION_INFORMATION = 1699 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  BROADCAST_LOCATION_ASSISTANCE_DATA_TYPES = 1700 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  PAGING_TIME_WINDOW = 1701 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  OPERATION_MODE = 1702 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  PAGING_TIME_WINDOW_LENGTH = 1703 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  CORE_NETWORK_RESTRICTIONS = 1704 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  EDRX_RELATED_RAT = 1705 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  INTERWORKING_5GS_INDICATOR = 1706 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  ETHERNET_PDN_TYPE_INDICATOR = 1707 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SUBSCRIBED_ARPI = 1708 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  IAB_OPERATION_PERMISSION = 1709 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  V2X_SUBSCRIPTION_DATA_NR = 1710 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  UE_PC5_QOS = 1711 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PC5_QOS_FLOW = 1712 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // 5QI
+  FIVE_QI = 1713 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  PC5_FLOW_BITRATES = 1714 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  GUARANTEED_FLOW_BITRATES = 1715 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  MAXIMUM_FLOW_BITRATES = 1716 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  PC5_RANGE = 1717 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  PC5_LINK_AMBR = 1718 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  THIRD_CONTEXT_IDENTIFIER = 1719 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  MDT_CONFIGURATION_NR = 1720 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  EVENT_THRESHOLD_SINR = 1721 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  COLLECTION_PERIOD_RRM_NR = 1722 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  COLLECTION_PERIOD_M6_NR = 1723 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  COLLECTION_PERIOD_M7_NR = 1724 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SENSOR_MEASUREMENT = 1725 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  NR_CELL_GLOBAL_IDENTITY = 1726 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  TRACE_REPORTING_CONSUMER_URI = 1727 [(diam.def) = {vendor: 10415, type: DIAMETER_URI}];
+  // TS 29.061 table 9a (Gi/SGi)
+  // 3GPP-Charging-Characteristics
+  TGPP_CHARGING_CHARACTERISTICS = 13 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // TS 29.214 §5.3.14
+  MAX_REQUESTED_BANDWIDTH_DL = 515 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.214 §5.3.15
+  MAX_REQUESTED_BANDWIDTH_UL = 516 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.214 §5.3.52
+  EXTENDED_MAX_REQUESTED_BW_DL = 554 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.214 §5.3.53
+  EXTENDED_MAX_REQUESTED_BW_UL = 555 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.229 §6.3.1; table 7.3.1/2: Must not set
+  VISITED_NETWORK_IDENTIFIER = 600 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.229 §6.3.27
+  CONFIDENTIALITY_KEY = 625 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.229 §6.3.28
+  INTEGRITY_KEY = 626 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.229 §6.3.29 (M-bit: may)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.229 §6.3.30
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.229 §6.3.31
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.329 §6.3.2
+  MSISDN = 701 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 32.299 §7.2
+  SERVED_PARTY_IP_ADDRESS = 848 [(diam.def) = {vendor: 10415, m: true, type: ADDRESS}];
+  // TS 32.299 §7.2; table 7.3.1/2: Must not set
+  CHARGED_PARTY = 857 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // TS 29.212 §5.3.17
+  QOS_CLASS_IDENTIFIER = 1028 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 29.212 §5.3.31; table 7.3.1/2: Must set
+  RAT_TYPE = 1032 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 29.212 §5.3.32 (M-bit: must not)
+  ALLOCATION_RETENTION_PRIORITY = 1034 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.212 §5.3.45 (M-bit: must not)
+  PRIORITY_LEVEL = 1046 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.212 §5.3.46 (M-bit: must not)
+  PRE_EMPTION_CAPABILITY = 1047 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 29.212 §5.3.47 (M-bit: must not)
+  PRE_EMPTION_VULNERABILITY = 1048 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 32.299 §7.2
+  PDP_ADDRESS = 1227 [(diam.def) = {vendor: 10415, m: true, type: ADDRESS}];
+  // TS 29.273 §7.2.3.4 (M-bit: may)
+  EMERGENCY_SERVICES = 1538 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 32.299 §7.2.46A
+  CSG_ACCESS_MODE = 2317 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 32.299 §7.2.46B
+  CSG_MEMBERSHIP_INDICATION = 2318 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 32.299 §7.2.240A; table 7.3.1/2: Must not set
+  USER_CSG_INFORMATION = 2319 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.173 §6.4.7; table 7.3.1/2: Must not set
+  GMLC_ADDRESS = 2405 [(diam.def) = {vendor: 10415, type: ADDRESS}];
+  // TS 29.336 §6.4.11; table 7.3.1/2: Must not set
+  EXTERNAL_IDENTIFIER = 3111 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // TS 29.336 §8.4.25; table 7.3.1/2: Must not set
+  AESE_COMMUNICATION_PATTERN = 3113 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.26; table 7.3.1/2: Must not set
+  COMMUNICATION_PATTERN_SET = 3114 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.27
+  PERIODIC_COMMUNICATION_INDICATOR = 3115 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.28
+  COMMUNICATION_DURATION_TIME = 3116 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.29 (table 8.4.1-1 spells it Periodic-time)
+  PERIODIC_TIME = 3117 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.30
+  SCHEDULED_COMMUNICATION_TIME = 3118 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.336 §8.4.31
+  STATIONARY_INDICATION = 3119 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.2; table 7.3.1/2: Must not set
+  MONITORING_EVENT_CONFIGURATION = 3122 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.3; table 7.3.1/2: Must not set
+  MONITORING_EVENT_REPORT = 3123 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.4; table 7.3.1/2: Must not set
+  SCEF_REFERENCE_ID = 3124 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.5; table 7.3.1/2: Must not set
+  SCEF_ID = 3125 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.336 §8.4.6; table 7.3.1/2: Must not set
+  SCEF_REFERENCE_ID_FOR_DELETION = 3126 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.7; table 7.3.1/2: Must not set
+  MONITORING_TYPE = 3127 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.8; table 7.3.1/2: Must not set
+  MAXIMUM_NUMBER_OF_REPORTS = 3128 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.9; table 7.3.1/2: Must not set
+  UE_REACHABILITY_CONFIGURATION = 3129 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.10; table 7.3.1/2: Must not set
+  MONITORING_DURATION = 3130 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.336 §8.4.12; table 7.3.1/2: Must not set
+  REACHABILITY_TYPE = 3132 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.14 (table 8.4.1-1 spells it "Maximum Response Time"); table 7.3.1/2: Must not set
+  MAXIMUM_RESPONSE_TIME = 3134 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.15; table 7.3.1/2: Must not set
+  LOCATION_INFORMATION_CONFIGURATION = 3135 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.16
+  MONTE_LOCATION_TYPE = 3136 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.17
+  ACCURACY = 3137 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.20; table 7.3.1/2: Must not set
+  REACHABILITY_INFORMATION = 3140 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.24; table 7.3.1/2: Must not set
+  MONITORING_EVENT_CONFIG_STATUS = 3142 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.40; table 7.3.1/2: Must not set
+  SUPPORTED_SERVICES = 3143 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.41; table 7.3.1/2: Must not set
+  SUPPORTED_MONITORING_EVENTS = 3144 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  // TS 29.336 §8.4.37
+  SERVICE_RESULT = 3146 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.336 §8.4.38
+  SERVICE_RESULT_CODE = 3147 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.42; table 7.3.1/2: Must not set
+  REFERENCE_ID_VALIDITY_TIME = 3148 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.336 §8.4.47
+  SERVICE_REPORT = 3152 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.336 §8.4.48
+  NODE_TYPE = 3153 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.336 §8.4.58; table 7.3.1/2: Must not set
+  LOSS_OF_CONNECTIVITY_REASON = 3162 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.74; table 7.3.1/2: Must not set
+  MTC_PROVIDER_INFO = 3178 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.75
+  MTC_PROVIDER_ID = 3179 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // TS 29.336 §8.4.76; table 7.3.1/2: Must not set
+  PDN_CONNECTIVITY_STATUS_CONFIGURATION = 3180 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.77; table 7.3.1/2: Must not set
+  PDN_CONNECTIVITY_STATUS_REPORT = 3181 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.336 §8.4.78
+  PDN_CONNECTIVITY_STATUS_TYPE = 3182 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.79; table 7.3.1/2: Must not set
+  TRAFFIC_PROFILE = 3183 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.81; table 7.3.1/2 M-bit column reads "Battery-Indicator" (garbled), so §8.4.81 applies
+  BATTERY_INDICATOR = 3185 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.336 §8.4.82; table 7.3.1/2: Must not set
+  SCEF_REFERENCE_ID_EXT = 3186 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  // TS 29.336 §8.4.83; table 7.3.1/2: Must not set
+  SCEF_REFERENCE_ID_FOR_DELETION_EXT = 3187 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  // TS 29.338 §5.3.3.22; table 7.3.1/2: Must not set
+  MAXIMUM_UE_AVAILABILITY_TIME = 3329 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.344 §6.3.2; table 7.3.1/2: Must not set
+  PROSE_SUBSCRIPTION_DATA = 3701 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.344 §6.3.3
+  PROSE_PERMISSION = 3702 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.217 §5.3.10 (spelt eNodeB-Id there); table 7.3.1/2: Must not set
+  ENODEB_ID = 4008 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.217 §5.3.15 (spelt Extended-eNodeB-Id there); table 7.3.1/2: Must not set
+  EXTENDED_ENODEB_ID = 4013 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.128 §6.4.32; table 7.3.1/2: Must not set
+  IDLE_STATUS_INDICATION = 4322 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.128 §6.4.33
+  IDLE_STATUS_TIMESTAMP = 4323 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.128 §6.4.34; table 7.3.1/2: Must not set
+  ACTIVE_TIME = 4324 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.128 §6.4.35; table 7.3.1/2: Must not set
+  REACHABILITY_CAUSE = 4325 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+}
+
+// IetfAvp holds the re-used IETF AVPs (no Vendor-Id). They are a separate
+// dictionary because an enum value number is the AVP code, and codes 625
+// and 626 are both an IETF and a 3GPP AVP.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 7944 §9.1; table 7.3.1/2: Must not set
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+  // RFC 5447 §4.2.4 gives no flag rule and TS 29.272 §7.3.45 says S6a does not use it; M left clear
+  MIP6_HOME_LINK_PREFIX = 125 [(diam.def) = {type: OCTET_STRING}];
+  // RFC 4004 §7.4
+  MIP_HOME_AGENT_ADDRESS = 334 [(diam.def) = {m: true, type: ADDRESS}];
+  // RFC 4004 §7.11 (its flag table says DiamIdent; the clause and ABNF say Grouped)
+  MIP_HOME_AGENT_HOST = 348 [(diam.def) = {m: true, type: GROUPED}];
+  // RFC 5447 §4.2.1; flags RFC 5778 §7
+  MIP6_AGENT_INFO = 486 [(diam.def) = {m: true, type: GROUPED}];
+  // RFC 5778 §6.2
+  SERVICE_SELECTION = 493 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 5777 §4.2.2 (no flag rule given)
+  TIME_OF_DAY_START = 561 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 5777 §4.2.3 (no flag rule given)
+  TIME_OF_DAY_END = 562 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 5777 §4.2.4 (no flag rule given)
+  DAY_OF_WEEK_MASK = 563 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.1; table 7.3.1/2: Must not set
+  OC_SUPPORTED_FEATURES = 621 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.2
+  OC_FEATURE_VECTOR = 622 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.3; table 7.3.1/2: Must not set
+  OC_OLR = 623 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.4
+  OC_SEQUENCE_NUMBER = 624 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.5
+  OC_VALIDITY_DURATION = 625 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.6
+  OC_REPORT_TYPE = 626 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.7
+  OC_REDUCTION_PERCENTAGE = 627 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 8583 §7.4
+  SOURCEID = 649 [(diam.def) = {type: DIAMETER_IDENTITY}];
+  // RFC 8583 §7.1; table 7.3.1/2: Must not set
+  LOAD = 650 [(diam.def) = {type: GROUPED}];
+  // RFC 8583 §7.2
+  LOAD_TYPE = 651 [(diam.def) = {type: ENUMERATED}];
+  // RFC 8583 §7.3
+  LOAD_VALUE = 652 [(diam.def) = {type: UNSIGNED64}];
+}
+
+// Network-Access-Mode (TS 29.272 §7.3.21).
+enum NetworkAccessMode {
+  NETWORK_ACCESS_MODE_PACKET_AND_CIRCUIT = 0;
+  NETWORK_ACCESS_MODE_RESERVED = 1;
+  NETWORK_ACCESS_MODE_ONLY_PACKET = 2;
+}
+
+// Cancellation-Type (TS 29.272 §7.3.24).
+enum CancellationType {
+  CANCELLATION_TYPE_MME_UPDATE_PROCEDURE = 0;
+  CANCELLATION_TYPE_SGSN_UPDATE_PROCEDURE = 1;
+  CANCELLATION_TYPE_SUBSCRIPTION_WITHDRAWAL = 2;
+  CANCELLATION_TYPE_UPDATE_PROCEDURE_IWF = 3;
+  CANCELLATION_TYPE_INITIAL_ATTACH_PROCEDURE = 4;
+}
+
+// Subscriber-Status (TS 29.272 §7.3.29).
+enum SubscriberStatus {
+  SUBSCRIBER_STATUS_SERVICE_GRANTED = 0;
+  SUBSCRIBER_STATUS_OPERATOR_DETERMINED_BARRING = 1;
+}
+
+// All-APN-Configurations-Included-Indicator (TS 29.272 §7.3.33).
+enum AllApnConfigurationsIncludedIndicator {
+  ALL_APN_CONFIGURATIONS_INCLUDED_INDICATOR_ALL_APN_CONFIGURATIONS_INCLUDED = 0;
+  ALL_APN_CONFIGURATIONS_INCLUDED_INDICATOR_MODIFIED_ADDED_APN_CONFIGURATIONS_INCLUDED = 1;
+}
+
+// VPLMN-Dynamic-Address-Allowed (TS 29.272 §7.3.38).
+enum VplmnDynamicAddressAllowed {
+  VPLMN_DYNAMIC_ADDRESS_ALLOWED_NOTALLOWED = 0;
+  VPLMN_DYNAMIC_ADDRESS_ALLOWED_ALLOWED = 1;
+}
+
+// Alert-Reason (TS 29.272 §7.3.83).
+enum AlertReason {
+  ALERT_REASON_UE_PRESENT = 0;
+  ALERT_REASON_UE_MEMORY_AVAILABLE = 1;
+}
+
+// PDN-GW-Allocation-Type (TS 29.272 §7.3.44).
+enum PdnGwAllocationType {
+  PDN_GW_ALLOCATION_TYPE_STATIC = 0;
+  PDN_GW_ALLOCATION_TYPE_DYNAMIC = 1;
+}
+
+// Equipment-Status (TS 29.272 §7.3.51).
+enum EquipmentStatus {
+  EQUIPMENT_STATUS_PERMITTEDLISTED = 0;
+  EQUIPMENT_STATUS_PROHIBITEDLISTED = 1;
+  EQUIPMENT_STATUS_TRACKINGLISTED = 2;
+}
+
+// PDN-Type (TS 29.272 §7.3.62).
+enum PdnType {
+  PDN_TYPE_IPV4 = 0;
+  PDN_TYPE_IPV6 = 1;
+  PDN_TYPE_IPV4V6 = 2;
+  PDN_TYPE_IPV4_OR_IPV6 = 3;
+}
+
+// Roaming-Restricted-Due-To-Unsupported-Feature (TS 29.272 §7.3.81).
+enum RoamingRestrictedDueToUnsupportedFeature {
+  ROAMING_RESTRICTED_DUE_TO_UNSUPPORTED_FEATURE_ROAMING_RESTRICTED_DUE_TO_UNSUPPORTED_FEATURE = 0;
+}
+
+// Complete-Data-List-Included-Indicator (TS 29.272 §7.3.73).
+enum CompleteDataListIncludedIndicator {
+  COMPLETE_DATA_LIST_INCLUDED_INDICATOR_ALL_PDP_CONTEXTS_INCLUDED = 0;
+  COMPLETE_DATA_LIST_INCLUDED_INDICATOR_MODIFIED_ADDED_PDP_CONTEXTS_INCLUDED = 1;
+}
+
+// Notification-To-UE-User (TS 29.272 §7.3.89).
+enum NotificationToUeUser {
+  NOTIFICATION_TO_UE_USER_NOTIFY_LOCATION_ALLOWED = 0;
+  NOTIFICATION_TO_UE_USER_NOTIFYANDVERIFY_LOCATION_ALLOWED_IF_NO_RESPONSE = 1;
+  NOTIFICATION_TO_UE_USER_NOTIFYANDVERIFY_LOCATION_NOT_ALLOWED_IF_NO_RESPONSE = 2;
+  NOTIFICATION_TO_UE_USER_LOCATION_NOT_ALLOWED = 3;
+}
+
+// GMLC-Restriction (TS 29.272 §7.3.92).
+enum GmlcRestriction {
+  GMLC_RESTRICTION_GMLC_LIST = 0;
+  GMLC_RESTRICTION_HOME_COUNTRY = 1;
+}
+
+// PLMN-Client (TS 29.272 §7.3.93).
+enum PlmnClient {
+  PLMN_CLIENT_BROADCAST_SERVICE = 0;
+  PLMN_CLIENT_O_AND_M_HPLMN = 1;
+  PLMN_CLIENT_O_AND_M_VPLMN = 2;
+  PLMN_CLIENT_ANONYMOUS_LOCATION = 3;
+  PLMN_CLIENT_TARGET_UE_SUBSCRIBED_SERVICE = 4;
+}
+
+// ICS-Indicator (TS 29.272 §7.3.104).
+enum IcsIndicator {
+  ICS_INDICATOR_FALSE = 0;
+  ICS_INDICATOR_TRUE = 1;
+}
+
+// IMS-Voice-Over-PS-Sessions-Supported (TS 29.272 §7.3.106).
+enum ImsVoiceOverPsSessionsSupported {
+  IMS_VOICE_OVER_PS_SESSIONS_SUPPORTED_NOT_SUPPORTED = 0;
+  IMS_VOICE_OVER_PS_SESSIONS_SUPPORTED_SUPPORTED = 1;
+}
+
+// Homogeneous-Support-of-IMS-Voice-Over-PS-Sessions (TS 29.272 §7.3.107).
+enum HomogeneousSupportOfImsVoiceOverPsSessions {
+  HOMOGENEOUS_SUPPORT_OF_IMS_VOICE_OVER_PS_SESSIONS_NOT_SUPPORTED = 0;
+  HOMOGENEOUS_SUPPORT_OF_IMS_VOICE_OVER_PS_SESSIONS_SUPPORTED = 1;
+}
+
+// User-State (TS 29.272 §7.3.114).
+enum UserState {
+  USER_STATE_DETACHED = 0;
+  USER_STATE_ATTACHED_NOT_REACHABLE_FOR_PAGING = 1;
+  USER_STATE_ATTACHED_REACHABLE_FOR_PAGING = 2;
+  USER_STATE_CONNECTED_NOT_REACHABLE_FOR_PAGING = 3;
+  USER_STATE_CONNECTED_REACHABLE_FOR_PAGING = 4;
+  USER_STATE_RESERVED = 5;
+}
+
+// Current-Location-Retrieved (TS 29.272 §7.3.125).
+enum CurrentLocationRetrieved {
+  CURRENT_LOCATION_RETRIEVED_ACTIVE_LOCATION_RETRIEVAL = 0;
+}
+
+// Error-Diagnostic (TS 29.272 §7.3.128).
+enum ErrorDiagnostic {
+  ERROR_DIAGNOSTIC_GPRS_DATA_SUBSCRIBED = 0;
+  ERROR_DIAGNOSTIC_NO_GPRS_DATA_SUBSCRIBED = 1;
+  ERROR_DIAGNOSTIC_ODB_ALL_APN = 2;
+  ERROR_DIAGNOSTIC_ODB_HPLMN_APN = 3;
+  ERROR_DIAGNOSTIC_ODB_VPLMN_APN = 4;
+}
+
+// UE-SRVCC-Capability (TS 29.272 §7.3.130).
+enum UeSrvccCapability {
+  UE_SRVCC_CAPABILITY_UE_SRVCC_NOT_SUPPORTED = 0;
+  UE_SRVCC_CAPABILITY_UE_SRVCC_SUPPORTED = 1;
+}
+
+// VPLMN-LIPA-Allowed (TS 29.272 §7.3.132).
+enum VplmnLipaAllowed {
+  VPLMN_LIPA_ALLOWED_LIPA_NOTALLOWED = 0;
+  VPLMN_LIPA_ALLOWED_LIPA_ALLOWED = 1;
+}
+
+// LIPA-Permission (TS 29.272 §7.3.133).
+enum LipaPermission {
+  LIPA_PERMISSION_LIPA_PROHIBITED = 0;
+  LIPA_PERMISSION_LIPA_ONLY = 1;
+  LIPA_PERMISSION_LIPA_CONDITIONAL = 2;
+}
+
+// SIPTO-Permission (TS 29.272 §7.3.135).
+enum SiptoPermission {
+  SIPTO_PERMISSION_SIPTO_ABOVE_RAN_ALLOWED = 0;
+  SIPTO_PERMISSION_SIPTO_ABOVE_RAN_NOTALLOWED = 1;
+}
+
+// Relay-Node-Indicator (TS 29.272 §7.3.147).
+enum RelayNodeIndicator {
+  RELAY_NODE_INDICATOR_NOT_RELAY_NODE = 0;
+  RELAY_NODE_INDICATOR_RELAY_NODE = 1;
+}
+
+// MDT-User-Consent (TS 29.272 §7.3.148).
+enum MdtUserConsent {
+  MDT_USER_CONSENT_CONSENT_NOT_GIVEN = 0;
+  MDT_USER_CONSENT_CONSENT_GIVEN = 1;
+}
+
+// Subscribed-VSRVCC (TS 29.272 §7.3.150).
+enum SubscribedVsrvcc {
+  SUBSCRIBED_VSRVCC_VSRVCC_SUBSCRIBED = 0;
+}
+
+// SMS-Register-Request (TS 29.272 §7.3.162).
+enum SmsRegisterRequest {
+  SMS_REGISTER_REQUEST_SMS_REGISTRATION_REQUIRED = 0;
+  SMS_REGISTER_REQUEST_SMS_REGISTRATION_NOT_PREFERRED = 1;
+  SMS_REGISTER_REQUEST_NO_PREFERENCE = 2;
+}
+
+// Daylight-Saving-Time (TS 29.272 §7.3.164).
+enum DaylightSavingTime {
+  DAYLIGHT_SAVING_TIME_NO_ADJUSTMENT = 0;
+  DAYLIGHT_SAVING_TIME_PLUS_ONE_HOUR_ADJUSTMENT = 1;
+  DAYLIGHT_SAVING_TIME_PLUS_TWO_HOURS_ADJUSTMENT = 2;
+}
+
+// Non-IP-PDN-Type-Indicator (TS 29.272 §7.3.204).
+enum NonIpPdnTypeIndicator {
+  NON_IP_PDN_TYPE_INDICATOR_FALSE = 0;
+  NON_IP_PDN_TYPE_INDICATOR_TRUE = 1;
+}
+
+// RDS-Indicator (TS 29.272 §7.3.222).
+enum RdsIndicator {
+  RDS_INDICATOR_DISABLED = 0;
+  RDS_INDICATOR_ENABLED = 1;
+}
+
+// Interworking-5GS-Indicator (TS 29.272 §7.3.231).
+enum Interworking5gsIndicator {
+  INTERWORKING5GS_INDICATOR_NOT_SUBSCRIBED = 0;
+  INTERWORKING5GS_INDICATOR_SUBSCRIBED = 1;
+}
+
+// Ethernet-PDN-Type-Indicator (TS 29.272 §7.3.232).
+enum EthernetPdnTypeIndicator {
+  ETHERNET_PDN_TYPE_INDICATOR_FALSE = 0;
+  ETHERNET_PDN_TYPE_INDICATOR_TRUE = 1;
+}
+
+// IAB-Operation-Permission (TS 29.272 §7.3.234).
+enum IabOperationPermission {
+  IAB_OPERATION_PERMISSION_IAB_OPERATION_ALLOWED = 0;
+  IAB_OPERATION_PERMISSION_IAB_OPERATION_NOTALLOWED = 1;
+}
+
+// Sensor-Measurement (TS 29.272 §7.3.250).
+enum SensorMeasurement {
+  SENSOR_MEASUREMENT_BAROMETRIC_PRESSURE = 0;
+  SENSOR_MEASUREMENT_UE_SPEED = 1;
+  SENSOR_MEASUREMENT_UE_ORIENTATION = 2;
+}
+
+// DRMP (RFC 7944 §9.1).
+enum Drmp {
+  DRMP_PRIORITY_0 = 0;
+  DRMP_PRIORITY_1 = 1;
+  DRMP_PRIORITY_2 = 2;
+  DRMP_PRIORITY_3 = 3;
+  DRMP_PRIORITY_4 = 4;
+  DRMP_PRIORITY_5 = 5;
+  DRMP_PRIORITY_6 = 6;
+  DRMP_PRIORITY_7 = 7;
+  DRMP_PRIORITY_8 = 8;
+  DRMP_PRIORITY_9 = 9;
+  DRMP_PRIORITY_10 = 10;
+  DRMP_PRIORITY_11 = 11;
+  DRMP_PRIORITY_12 = 12;
+  DRMP_PRIORITY_13 = 13;
+  DRMP_PRIORITY_14 = 14;
+  DRMP_PRIORITY_15 = 15;
+}
+
+// OC-Report-Type (RFC 7683 §7.6).
+enum OcReportType {
+  OC_REPORT_TYPE_HOST_REPORT = 0;
+  OC_REPORT_TYPE_REALM_REPORT = 1;
+}
+
+// Load-Type (RFC 8583 §7.2).
+enum LoadType {
+  LOAD_TYPE_HOST = 0;
+  LOAD_TYPE_PEER = 1;
+}
+
+// QoS-Class-Identifier (TS 29.212 §5.3.17). The enumeration has no value 0.
+enum QosClassIdentifier {
+  QOS_CLASS_IDENTIFIER_UNSPECIFIED = 0;
+  QOS_CLASS_IDENTIFIER_QCI_1 = 1;
+  QOS_CLASS_IDENTIFIER_QCI_2 = 2;
+  QOS_CLASS_IDENTIFIER_QCI_3 = 3;
+  QOS_CLASS_IDENTIFIER_QCI_4 = 4;
+  QOS_CLASS_IDENTIFIER_QCI_5 = 5;
+  QOS_CLASS_IDENTIFIER_QCI_6 = 6;
+  QOS_CLASS_IDENTIFIER_QCI_7 = 7;
+  QOS_CLASS_IDENTIFIER_QCI_8 = 8;
+  QOS_CLASS_IDENTIFIER_QCI_9 = 9;
+  QOS_CLASS_IDENTIFIER_QCI_65 = 65;
+  QOS_CLASS_IDENTIFIER_QCI_66 = 66;
+  QOS_CLASS_IDENTIFIER_QCI_67 = 67;
+  QOS_CLASS_IDENTIFIER_QCI_69 = 69;
+  QOS_CLASS_IDENTIFIER_QCI_70 = 70;
+  QOS_CLASS_IDENTIFIER_QCI_71 = 71;
+  QOS_CLASS_IDENTIFIER_QCI_72 = 72;
+  QOS_CLASS_IDENTIFIER_QCI_73 = 73;
+  QOS_CLASS_IDENTIFIER_QCI_74 = 74;
+  QOS_CLASS_IDENTIFIER_QCI_75 = 75;
+  QOS_CLASS_IDENTIFIER_QCI_76 = 76;
+  QOS_CLASS_IDENTIFIER_QCI_79 = 79;
+  QOS_CLASS_IDENTIFIER_QCI_80 = 80;
+  QOS_CLASS_IDENTIFIER_QCI_82 = 82;
+  QOS_CLASS_IDENTIFIER_QCI_83 = 83;
+  QOS_CLASS_IDENTIFIER_QCI_84 = 84;
+  QOS_CLASS_IDENTIFIER_QCI_85 = 85;
+}
+
+// RAT-Type (TS 29.212 §5.3.31).
+enum RatType {
+  RAT_TYPE_WLAN = 0;
+  RAT_TYPE_VIRTUAL = 1;
+  RAT_TYPE_TRUSTED_N3GA = 2;
+  RAT_TYPE_WIRELINE = 3;
+  RAT_TYPE_WIRELINE_CABLE = 4;
+  RAT_TYPE_WIRELINE_BBF = 5;
+  RAT_TYPE_UTRAN = 1000;
+  RAT_TYPE_GERAN = 1001;
+  RAT_TYPE_GAN = 1002;
+  RAT_TYPE_HSPA_EVOLUTION = 1003;
+  RAT_TYPE_EUTRAN = 1004;
+  RAT_TYPE_EUTRAN_NB_IOT = 1005;
+  RAT_TYPE_NR = 1006;
+  RAT_TYPE_LTE_M = 1007;
+  RAT_TYPE_NR_U = 1008;
+  RAT_TYPE_EUTRAN_LEO = 1011;
+  RAT_TYPE_EUTRAN_MEO = 1012;
+  RAT_TYPE_EUTRAN_GEO = 1013;
+  RAT_TYPE_EUTRAN_OTHERSAT = 1014;
+}
+
+// Pre-emption-Capability (TS 29.212 §5.3.46).
+enum PreEmptionCapability {
+  PRE_EMPTION_CAPABILITY_PRE_EMPTION_CAPABILITY_ENABLED = 0;
+  PRE_EMPTION_CAPABILITY_PRE_EMPTION_CAPABILITY_DISABLED = 1;
+}
+
+// Pre-emption-Vulnerability (TS 29.212 §5.3.47).
+enum PreEmptionVulnerability {
+  PRE_EMPTION_VULNERABILITY_PRE_EMPTION_VULNERABILITY_ENABLED = 0;
+  PRE_EMPTION_VULNERABILITY_PRE_EMPTION_VULNERABILITY_DISABLED = 1;
+}
+
+// CSG-Access-Mode (TS 32.299 §7.2.46A).
+enum CsgAccessMode {
+  CSG_ACCESS_MODE_CLOSED_MODE = 0;
+  CSG_ACCESS_MODE_HYBRID_MODE = 1;
+}
+
+// CSG-Membership-Indication (TS 32.299 §7.2.46B).
+enum CsgMembershipIndication {
+  CSG_MEMBERSHIP_INDICATION_NOT_CSG_MEMBER = 0;
+  CSG_MEMBERSHIP_INDICATION_CSG_MEMBER = 1;
+}
+
+// OC-Supported-Features (RFC 7683 §7.1)
+//
+// OC-Supported-Features ::= < AVP Header: 621 >
+//   [ OC-Feature-Vector ]
+//   *[ AVP ]
+message OcSupportedFeatures {
+  option (diam.extensible) = true;
+  optional uint64 oc_feature_vector = 1;
+}
+
+// Supported-Features (TS 29.229 §6.3.29)
+//
+// Supported-Features ::= < AVP Header: 628 10415 >
+//   { Vendor-Id }
+//   { Feature-List-ID }
+//   { Feature-List }
+//   *[ AVP ]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// Terminal-Information (TS 29.272 §7.3.3)
+//
+// Terminal-Information ::= < AVP Header: 1401 10415 >
+//   [ IMEI ]
+//   [ 3GPP2-MEID ]
+//   [ Software-Version ]
+//   *[ AVP ]
+message TerminalInformation {
+  option (diam.extensible) = true;
+  optional string imei = 1;
+  optional bytes tgpp2_meid = 2;
+  optional string software_version = 3;
+}
+
+// Active-APN (TS 29.272 §7.3.127)
+//
+// Active-APN ::= < AVP Header: 1612 10415 >
+//   { Context-Identifier }
+//   [ Service-Selection ]
+//   [ MIP6-Agent-Info ]
+//   [ Visited-Network-Identifier ]
+//   *[ Specific-APN-Info ]
+//   *[ AVP ]
+message ActiveApn {
+  option (diam.extensible) = true;
+  uint32 context_identifier = 1;
+  optional string service_selection = 2;
+  optional Mip6AgentInfo mip6_agent_info = 3;
+  optional bytes visited_network_identifier = 4;
+  repeated SpecificApnInfo specific_apn_info = 5;
+}
+
+// Equivalent-PLMN-List (TS 29.272 §7.3.151)
+//
+// Equivalent-PLMN-List ::= < AVP Header: 1637 10415 >
+//   1*{ Visited-PLMN-Id }
+//   *[ AVP ]
+message EquivalentPlmnList {
+  option (diam.extensible) = true;
+  repeated bytes visited_plmn_id = 1 [(diam.min) = 1];
+}
+
+// Adjacent-PLMNs (TS 29.272 §7.3.186)
+//
+// Adjacent-PLMNs ::= < AVP Header: 1672 10415 >
+//   1*{ Visited-PLMN-Id }
+//   *[ AVP ]
+message AdjacentPlmns {
+  option (diam.extensible) = true;
+  repeated bytes visited_plmn_id = 1 [(diam.min) = 1];
+}
+
+// Supported-Services (TS 29.272 §7.3.199)
+//
+// Supported-Services ::= < AVP Header: 3143 10415 >
+//   [ Supported-Monitoring-Events ]
+//   *[ AVP ]
+message SupportedServices {
+  option (diam.extensible) = true;
+  optional uint64 supported_monitoring_events = 1;
+}
+
+// OC-OLR (RFC 7683 §7.3)
+//
+// OC-OLR ::= < AVP Header: 623 >
+//   < OC-Sequence-Number >
+//   < OC-Report-Type >
+//   [ OC-Reduction-Percentage ]
+//   [ OC-Validity-Duration ]
+//   *[ AVP ]
+message OcOlr {
+  option (diam.extensible) = true;
+  uint64 oc_sequence_number = 1 [(diam.fixed) = true];
+  OcReportType oc_report_type = 2 [(diam.fixed) = true];
+  optional uint32 oc_reduction_percentage = 3;
+  optional uint32 oc_validity_duration = 4;
+}
+
+// Load (RFC 8583 §7.1)
+//
+// Load ::= < AVP Header: 650 >
+//   [ Load-Type ]
+//   [ Load-Value ]
+//   [ SourceID ]
+//   *[ AVP ]
+message Load {
+  option (diam.extensible) = true;
+  optional LoadType load_type = 1;
+  optional uint64 load_value = 2;
+  optional string sourceid = 3;
+}
+
+// Subscription-Data (TS 29.272 §7.3.2)
+//
+// Subscription-Data ::= < AVP Header: 1400 10415 >
+//   [ Subscriber-Status ]
+//   [ MSISDN ]
+//   [ A-MSISDN ]
+//   [ STN-SR ]
+//   [ ICS-Indicator ]
+//   [ Network-Access-Mode ]
+//   [ Operator-Determined-Barring ]
+//   [ HPLMN-ODB ]
+//   *10[ Regional-Subscription-Zone-Code ]
+//   [ Access-Restriction-Data ]
+//   [ APN-OI-Replacement ]
+//   [ LCS-Info ]
+//   [ Teleservice-List ]
+//   *[ Call-Barring-Info ]
+//   [ 3GPP-Charging-Characteristics ]
+//   [ AMBR ]
+//   [ APN-Configuration-Profile ]
+//   [ RAT-Frequency-Selection-Priority-ID ]
+//   [ Trace-Data ]
+//   [ GPRS-Subscription-Data ]
+//   *[ CSG-Subscription-Data ]
+//   [ Roaming-Restricted-Due-To-Unsupported-Feature ]
+//   [ Subscribed-Periodic-RAU-TAU-Timer ]
+//   [ MPS-Priority ]
+//   [ VPLMN-LIPA-Allowed ]
+//   [ Relay-Node-Indicator ]
+//   [ MDT-User-Consent ]
+//   [ Subscribed-VSRVCC ]
+//   [ ProSe-Subscription-Data ]
+//   [ Subscription-Data-Flags ]
+//   *[ Adjacent-Access-Restriction-Data ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   *[ IMSI-Group-Id ]
+//   [ UE-Usage-Type ]
+//   *[ AESE-Communication-Pattern ]
+//   *[ Monitoring-Event-Configuration ]
+//   [ Emergency-Info ]
+//   [ V2X-Subscription-Data ]
+//   [ V2X-Subscription-Data-Nr ]
+//   *[ eDRX-Cycle-Length ]
+//   [ External-Identifier ]
+//   [ Active-Time ]
+//   [ Service-Gap-Time ]
+//   [ Broadcast-Location-Assistance-Data-Types ]
+//   [ Aerial-UE-Subscription-Information ]
+//   [ Core-Network-Restrictions ]
+//   *[ Paging-Time-Window ]
+//   [ Subscribed-ARPI ]
+//   [ IAB-Operation-Permission ]
+//   *[ AVP ]
+message SubscriptionData {
+  option (diam.extensible) = true;
+  optional SubscriberStatus subscriber_status = 1;
+  optional bytes msisdn = 2;
+  optional bytes a_msisdn = 3;
+  optional bytes stn_sr = 4;
+  optional IcsIndicator ics_indicator = 5;
+  optional NetworkAccessMode network_access_mode = 6;
+  optional uint32 operator_determined_barring = 7;
+  optional uint32 hplmn_odb = 8;
+  repeated bytes regional_subscription_zone_code = 9 [(diam.max) = 10];
+  optional uint32 access_restriction_data = 10;
+  optional string apn_oi_replacement = 11;
+  optional LcsInfo lcs_info = 12;
+  optional TeleserviceList teleservice_list = 13;
+  repeated CallBarringInfo call_barring_info = 14;
+  optional string tgpp_charging_characteristics = 15;
+  optional Ambr ambr = 16;
+  optional ApnConfigurationProfile apn_configuration_profile = 17;
+  optional uint32 rat_frequency_selection_priority_id = 18;
+  optional TraceData trace_data = 19;
+  optional GprsSubscriptionData gprs_subscription_data = 20;
+  repeated CsgSubscriptionData csg_subscription_data = 21;
+  optional RoamingRestrictedDueToUnsupportedFeature roaming_restricted_due_to_unsupported_feature = 22;
+  optional uint32 subscribed_periodic_rau_tau_timer = 23;
+  optional uint32 mps_priority = 24;
+  optional VplmnLipaAllowed vplmn_lipa_allowed = 25;
+  optional RelayNodeIndicator relay_node_indicator = 26;
+  optional MdtUserConsent mdt_user_consent = 27;
+  optional SubscribedVsrvcc subscribed_vsrvcc = 28;
+  optional ProseSubscriptionData prose_subscription_data = 29;
+  optional uint32 subscription_data_flags = 30;
+  repeated AdjacentAccessRestrictionData adjacent_access_restriction_data = 31;
+  optional int32 dl_buffering_suggested_packet_count = 32;
+  repeated ImsiGroupId imsi_group_id = 33;
+  optional uint32 ue_usage_type = 34;
+  repeated AeseCommunicationPattern aese_communication_pattern = 35;
+  repeated MonitoringEventConfiguration monitoring_event_configuration = 36;
+  optional EmergencyInfo emergency_info = 37;
+  optional V2xSubscriptionData v2x_subscription_data = 38;
+  optional V2xSubscriptionDataNr v2x_subscription_data_nr = 39;
+  repeated EdrxCycleLength edrx_cycle_length = 40;
+  optional string external_identifier = 41;
+  optional uint32 active_time = 42;
+  optional uint32 service_gap_time = 43;
+  optional uint64 broadcast_location_assistance_data_types = 44;
+  optional uint32 aerial_ue_subscription_information = 45;
+  optional uint32 core_network_restrictions = 46;
+  repeated PagingTimeWindow paging_time_window = 47;
+  optional uint32 subscribed_arpi = 48;
+  optional IabOperationPermission iab_operation_permission = 49;
+}
+
+// Requested-EUTRAN-Authentication-Info (TS 29.272 §7.3.11)
+//
+// Requested-EUTRAN-Authentication-Info ::= < AVP Header: 1408 10415 >
+//   [ Number-Of-Requested-Vectors ]
+//   [ Immediate-Response-Preferred ]
+//   [ Re-synchronization-Info ]
+//   *[ AVP ]
+message RequestedEutranAuthenticationInfo {
+  option (diam.extensible) = true;
+  optional uint32 number_of_requested_vectors = 1;
+  optional uint32 immediate_response_preferred = 2;
+  optional bytes re_synchronization_info = 3;
+}
+
+// Requested-UTRAN-GERAN-Authentication-Info (TS 29.272 §7.3.12)
+//
+// Requested-UTRAN-GERAN-Authentication-Info ::= < AVP Header: 1409 10415 >
+//   [ Number-Of-Requested-Vectors ]
+//   [ Immediate-Response-Preferred ]
+//   [ Re-synchronization-Info ]
+//   *[ AVP ]
+message RequestedUtranGeranAuthenticationInfo {
+  option (diam.extensible) = true;
+  optional uint32 number_of_requested_vectors = 1;
+  optional uint32 immediate_response_preferred = 2;
+  optional bytes re_synchronization_info = 3;
+}
+
+// Authentication-Info (TS 29.272 §7.3.17)
+//
+// Authentication-Info ::= < AVP Header: 1413 10415 >
+//   *[ E-UTRAN-Vector ]
+//   *[ UTRAN-Vector ]
+//   *[ GERAN-Vector ]
+//   *[ AVP ]
+message AuthenticationInfo {
+  option (diam.extensible) = true;
+  repeated EUtranVector e_utran_vector = 1;
+  repeated UtranVector utran_vector = 2;
+  repeated GeranVector geran_vector = 3;
+}
+
+// EPS-User-State (TS 29.272 §7.3.110)
+//
+// EPS-User-State ::= < AVP Header: 1495 10415 >
+//   [ MME-User-State ]
+//   [ SGSN-User-State ]
+//   *[ AVP ]
+message EpsUserState {
+  option (diam.extensible) = true;
+  optional MmeUserState mme_user_state = 1;
+  optional SgsnUserState sgsn_user_state = 2;
+}
+
+// EPS-Location-Information (TS 29.272 §7.3.111)
+//
+// EPS-Location-Information ::= < AVP Header: 1496 10415 >
+//   [ MME-Location-Information ]
+//   [ SGSN-Location-Information ]
+//   *[ AVP ]
+message EpsLocationInformation {
+  option (diam.extensible) = true;
+  optional MmeLocationInformation mme_location_information = 1;
+  optional SgsnLocationInformation sgsn_location_information = 2;
+}
+
+// Local-Time-Zone (TS 29.272 §7.3.156)
+//
+// Local-Time-Zone ::= < AVP Header: 1649 10415 >
+//   { Time-Zone }
+//   { Daylight-Saving-Time }
+//   *[ AVP ]
+message LocalTimeZone {
+  option (diam.extensible) = true;
+  string time_zone = 1;
+  DaylightSavingTime daylight_saving_time = 2;
+}
+
+// Monitoring-Event-Report (TS 29.272 §7.3.196)
+//
+// Monitoring-Event-Report ::= < AVP Header: 3123 10415 >
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   [ Reachability-Information ]
+//   [ Reachability-Cause ]
+//   [ EPS-Location-Information ]
+//   [ Monitoring-Type ]
+//   [ Loss-Of-Connectivity-Reason ]
+//   [ Idle-Status-Indication ]
+//   [ Maximum-UE-Availability-Time ]
+//   *[ PDN-Connectivity-Status-Report ]
+//   *[ AVP ]
+message MonitoringEventReport {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  optional string scef_id = 3;
+  optional uint32 reachability_information = 4;
+  optional uint32 reachability_cause = 5;
+  optional EpsLocationInformation eps_location_information = 6;
+  optional uint32 monitoring_type = 7;
+  optional uint32 loss_of_connectivity_reason = 8;
+  optional IdleStatusIndication idle_status_indication = 9;
+  optional uint32 maximum_ue_availability_time = 10;
+  repeated PdnConnectivityStatusReport pdn_connectivity_status_report = 11;
+}
+
+// Monitoring-Event-Config-Status (TS 29.336 §8.4.24)
+//
+// Monitoring-Event-Config-Status ::= < AVP Header: 3142 10415 >
+//   *[ Service-Report ]
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   *[ AVP ]
+message MonitoringEventConfigStatus {
+  option (diam.extensible) = true;
+  repeated ServiceReport service_report = 1;
+  uint32 scef_reference_id = 2;
+  optional uint64 scef_reference_id_ext = 3;
+  optional string scef_id = 4;
+}
+
+// eDRX-Related-RAT (TS 29.272 §7.3.229)
+//
+// eDRX-Related-RAT ::= < AVP Header: 1705 10415 >
+//   1*{ RAT-Type }
+//   *[ AVP ]
+message EdrxRelatedRat {
+  option (diam.extensible) = true;
+  repeated RatType rat_type = 1 [(diam.min) = 1];
+}
+
+// Subscription-Data-Deletion (TS 29.272 §7.3.208)
+//
+// Subscription-Data-Deletion ::= < AVP Header: 1685 10415 >
+//   { DSR-Flags }
+//   [ SCEF-ID ]
+//   *[ Context-Identifier ]
+//   [ Trace-Reference ]
+//   *[ TS-Code ]
+//   *[ SS-Code ]
+//   *[ AVP ]
+message SubscriptionDataDeletion {
+  option (diam.extensible) = true;
+  uint32 dsr_flags = 1;
+  optional string scef_id = 2;
+  repeated uint32 context_identifier = 3;
+  optional bytes trace_reference = 4;
+  repeated bytes ts_code = 5;
+  repeated bytes ss_code = 6;
+}
+
+// MIP6-Agent-Info (TS 29.272 §7.3.45)
+//
+// MIP6-Agent-Info ::= < AVP Header: 486 >
+//   *2[ MIP-Home-Agent-Address ]
+//   [ MIP-Home-Agent-Host ]
+//   [ MIP6-Home-Link-Prefix ]
+//   *[ AVP ]
+message Mip6AgentInfo {
+  option (diam.extensible) = true;
+  repeated bytes mip_home_agent_address = 1 [(diam.max) = 2];
+  optional MipHomeAgentHost mip_home_agent_host = 2;
+  optional bytes mip6_home_link_prefix = 3;
+}
+
+// Specific-APN-Info (TS 29.272 §7.3.82)
+//
+// Specific-APN-Info ::= < AVP Header: 1472 10415 >
+//   { Service-Selection }
+//   { MIP6-Agent-Info }
+//   [ Visited-Network-Identifier ]
+//   *[ AVP ]
+message SpecificApnInfo {
+  option (diam.extensible) = true;
+  string service_selection = 1;
+  Mip6AgentInfo mip6_agent_info = 2;
+  optional bytes visited_network_identifier = 3;
+}
+
+// LCS-Info (TS 29.272 §7.3.84)
+//
+// LCS-Info ::= < AVP Header: 1473 10415 >
+//   *[ GMLC-Number ]
+//   *[ LCS-PrivacyException ]
+//   *[ MO-LR ]
+//   *[ AVP ]
+message LcsInfo {
+  option (diam.extensible) = true;
+  repeated bytes gmlc_number = 1;
+  repeated LcsPrivacyexception lcs_privacyexception = 2;
+  repeated MoLr mo_lr = 3;
+}
+
+// Teleservice-List (TS 29.272 §7.3.99)
+//
+// Teleservice-List ::= < AVP Header: 1486 10415 >
+//   1*{ TS-Code }
+//   *[ AVP ]
+message TeleserviceList {
+  option (diam.extensible) = true;
+  repeated bytes ts_code = 1 [(diam.min) = 1];
+}
+
+// Call-Barring-Info (TS 29.272 §7.3.101)
+//
+// Call-Barring-Info ::= < AVP Header: 1488 10415 >
+//   { SS-Code }
+//   { SS-Status }
+//   *[ AVP ]
+message CallBarringInfo {
+  option (diam.extensible) = true;
+  bytes ss_code = 1;
+  bytes ss_status = 2;
+}
+
+// AMBR (TS 29.272 §7.3.41)
+//
+// AMBR ::= < AVP Header: 1435 10415 >
+//   { Max-Requested-Bandwidth-UL }
+//   { Max-Requested-Bandwidth-DL }
+//   [ Extended-Max-Requested-BW-UL ]
+//   [ Extended-Max-Requested-BW-DL ]
+//   *[ AVP ]
+message Ambr {
+  option (diam.extensible) = true;
+  uint32 max_requested_bandwidth_ul = 1;
+  uint32 max_requested_bandwidth_dl = 2;
+  optional uint32 extended_max_requested_bw_ul = 3;
+  optional uint32 extended_max_requested_bw_dl = 4;
+}
+
+// APN-Configuration-Profile (TS 29.272 §7.3.34)
+//
+// APN-Configuration-Profile ::= < AVP Header: 1429 10415 >
+//   { Context-Identifier }
+//   [ Additional-Context-Identifier ]
+//   [ Third-Context-Identifier ]
+//   { All-APN-Configurations-Included-Indicator }
+//   1*{ APN-Configuration }
+//   *[ AVP ]
+message ApnConfigurationProfile {
+  option (diam.extensible) = true;
+  uint32 context_identifier = 1;
+  optional uint32 additional_context_id = 2;
+  optional uint32 third_context_identifier = 3;
+  AllApnConfigurationsIncludedIndicator all_apn_configurations_included_indicator = 4;
+  repeated ApnConfiguration apn_configuration = 5 [(diam.min) = 1];
+}
+
+// Trace-Data (TS 29.272 §7.3.63)
+//
+// Trace-Data ::= < AVP Header: 1458 10415 >
+//   { Trace-Reference }
+//   { Trace-Depth }
+//   { Trace-NE-Type-List }
+//   [ Trace-Interface-List ]
+//   { Trace-Event-List }
+//   [ OMC-Id ]
+//   { Trace-Collection-Entity }
+//   [ MDT-Configuration ]
+//   [ MDT-Configuration-NR ]
+//   [ Trace-Reporting-Consumer-Uri ]
+//   *[ AVP ]
+message TraceData {
+  option (diam.extensible) = true;
+  bytes trace_reference = 1;
+  int32 trace_depth = 2;
+  bytes trace_ne_type_list = 3;
+  optional bytes trace_interface_list = 4;
+  bytes trace_event_list = 5;
+  optional bytes omc_id = 6;
+  bytes trace_collection_entity = 7;
+  optional MdtConfiguration mdt_configuration = 8;
+  optional MdtConfigurationNr mdt_configuration_nr = 9;
+  optional string trace_reporting_consumer_uri = 10;
+}
+
+// GPRS-Subscription-Data (TS 29.272 §7.3.72)
+//
+// GPRS-Subscription-Data ::= < AVP Header: 1467 10415 >
+//   { Complete-Data-List-Included-Indicator }
+//   1*50{ PDP-Context }
+//   *[ AVP ]
+message GprsSubscriptionData {
+  option (diam.extensible) = true;
+  CompleteDataListIncludedIndicator complete_data_list_included_indicator = 1;
+  repeated PdpContext pdp_context = 2 [(diam.min) = 1, (diam.max) = 50];
+}
+
+// CSG-Subscription-Data (TS 29.272 §7.3.78)
+//
+// CSG-Subscription-Data ::= < AVP Header: 1436 10415 >
+//   { CSG-Id }
+//   [ Expiration-Date ]
+//   *[ Service-Selection ]
+//   [ Visited-PLMN-Id ]
+//   *[ AVP ]
+message CsgSubscriptionData {
+  option (diam.extensible) = true;
+  uint32 csg_id = 1;
+  optional uint32 expiration_date = 2;
+  repeated string service_selection = 3;
+  optional bytes visited_plmn_id = 4;
+}
+
+// ProSe-Subscription-Data (TS 29.272 §7.3.180)
+//
+// ProSe-Subscription-Data ::= < AVP Header: 3701 10415 >
+//   { ProSe-Permission }
+//   *[ AVP ]
+message ProseSubscriptionData {
+  option (diam.extensible) = true;
+  uint32 prose_permission = 1;
+}
+
+// Adjacent-Access-Restriction-Data (TS 29.272 §7.3.187)
+//
+// Adjacent-Access-Restriction-Data ::= < AVP Header: 1673 10415 >
+//   { Visited-PLMN-Id }
+//   { Access-Restriction-Data }
+//   *[ AVP ]
+message AdjacentAccessRestrictionData {
+  option (diam.extensible) = true;
+  bytes visited_plmn_id = 1;
+  uint32 access_restriction_data = 2;
+}
+
+// IMSI-Group-Id (TS 29.272 §7.3.189)
+//
+// IMSI-Group-Id ::= < AVP Header: 1675 10415 >
+//   { Group-Service-Id }
+//   { Group-PLMN-Id }
+//   { Local-Group-Id }
+//   *[ AVP ]
+message ImsiGroupId {
+  option (diam.extensible) = true;
+  uint32 group_service_id = 1;
+  bytes group_plmn_id = 2;
+  bytes local_group_id = 3;
+}
+
+// AESE-Communication-Pattern (TS 29.272 §7.3.193)
+//
+// AESE-Communication-Pattern ::= < AVP Header: 3113 10415 >
+//   [ SCEF-Reference-ID ]
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   *[ Communication-Pattern-Set ]
+//   [ MTC-Provider-Info ]
+//   *[ AVP ]
+message AeseCommunicationPattern {
+  option (diam.extensible) = true;
+  optional uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  repeated uint32 scef_reference_id_for_deletion = 4;
+  repeated uint64 scef_reference_id_for_deletion_ext = 5;
+  repeated CommunicationPatternSet communication_pattern_set = 6;
+  optional MtcProviderInfo mtc_provider_info = 7;
+}
+
+// Monitoring-Event-Configuration (TS 29.272 §7.3.195)
+//
+// Monitoring-Event-Configuration ::= < AVP Header: 3122 10415 >
+//   [ SCEF-Reference-ID ]
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   { Monitoring-Type }
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   [ Maximum-Number-of-Reports ]
+//   [ Monitoring-Duration ]
+//   [ Charged-Party ]
+//   [ UE-Reachability-Configuration ]
+//   [ Location-Information-Configuration ]
+//   [ SCEF-Realm ]
+//   [ External-Identifier ]
+//   [ MTC-Provider-Info ]
+//   [ PDN-Connectivity-Status-Configuration ]
+//   *[ AVP ]
+message MonitoringEventConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  uint32 monitoring_type = 4;
+  repeated uint32 scef_reference_id_for_deletion = 5;
+  repeated uint64 scef_reference_id_for_deletion_ext = 6;
+  optional uint32 maximum_number_of_reports = 7;
+  optional uint32 monitoring_duration = 8;
+  optional string charged_party = 9;
+  optional UeReachabilityConfiguration ue_reachability_configuration = 10;
+  optional LocationInformationConfiguration location_information_configuration = 11;
+  optional string scef_realm = 12;
+  optional string external_identifier = 13;
+  optional MtcProviderInfo mtc_provider_info = 14;
+  optional PdnConnectivityStatusConfiguration pdn_connectivity_status_configuration = 15;
+}
+
+// Emergency-Info (TS 29.272 §7.3.210)
+//
+// Emergency-Info ::= < AVP Header: 1687 10415 >
+//   [ MIP6-Agent-Info ]
+//   *[ AVP ]
+message EmergencyInfo {
+  option (diam.extensible) = true;
+  optional Mip6AgentInfo mip6_agent_info = 1;
+}
+
+// V2X-Subscription-Data (TS 29.272 §7.3.212)
+//
+// V2X-Subscription-Data ::= < AVP Header: 1688 10415 >
+//   [ V2X-Permission ]
+//   [ UE-PC5-AMBR ]
+//   *[ AVP ]
+message V2xSubscriptionData {
+  option (diam.extensible) = true;
+  optional uint32 v2x_permission = 1;
+  optional uint32 ue_pc5_ambr = 2;
+}
+
+// V2X-Subscription-Data-Nr (TS 29.272 §7.3.235)
+//
+// V2X-Subscription-Data-Nr ::= < AVP Header: 1710 10415 >
+//   [ V2X-Permission ]
+//   [ UE-PC5-AMBR ]
+//   [ UE-PC5-QoS ]
+//   *[ AVP ]
+message V2xSubscriptionDataNr {
+  option (diam.extensible) = true;
+  optional uint32 v2x_permission = 1;
+  optional uint32 ue_pc5_ambr = 2;
+  optional UePc5Qos ue_pc5_qos = 3;
+}
+
+// eDRX-Cycle-Length (TS 29.272 §7.3.215)
+//
+// eDRX-Cycle-Length ::= < AVP Header: 1691 10415 >
+//   { RAT-Type }
+//   { eDRX-Cycle-Length-Value }
+//   *[ AVP ]
+message EdrxCycleLength {
+  option (diam.extensible) = true;
+  RatType rat_type = 1;
+  bytes edrx_cycle_length_value = 2;
+}
+
+// Paging-Time-Window (TS 29.272 §7.3.226)
+//
+// Paging-Time-Window ::= < AVP Header: 1701 10415 >
+//   { Operation-Mode }
+//   { Paging-Time-Window-Length }
+//   *[ AVP ]
+message PagingTimeWindow {
+  option (diam.extensible) = true;
+  uint32 operation_mode = 1;
+  bytes paging_time_window_length = 2;
+}
+
+// E-UTRAN-Vector (TS 29.272 §7.3.18)
+//
+// E-UTRAN-Vector ::= < AVP Header: 1414 10415 >
+//   [ Item-Number ]
+//   { RAND }
+//   { XRES }
+//   { AUTN }
+//   { KASME }
+//   *[ AVP ]
+message EUtranVector {
+  option (diam.extensible) = true;
+  optional uint32 item_number = 1;
+  bytes rand = 2;
+  bytes xres = 3;
+  bytes autn = 4;
+  bytes kasme = 5;
+}
+
+// UTRAN-Vector (TS 29.272 §7.3.19)
+//
+// UTRAN-Vector ::= < AVP Header: 1415 10415 >
+//   [ Item-Number ]
+//   { RAND }
+//   { XRES }
+//   { AUTN }
+//   { Confidentiality-Key }
+//   { Integrity-Key }
+//   *[ AVP ]
+message UtranVector {
+  option (diam.extensible) = true;
+  optional uint32 item_number = 1;
+  bytes rand = 2;
+  bytes xres = 3;
+  bytes autn = 4;
+  bytes confidentiality_key = 5;
+  bytes integrity_key = 6;
+}
+
+// GERAN-Vector (TS 29.272 §7.3.20)
+//
+// GERAN-Vector ::= < AVP Header: 1416 10415 >
+//   [ Item-Number ]
+//   { RAND }
+//   { SRES }
+//   { Kc }
+//   *[ AVP ]
+message GeranVector {
+  option (diam.extensible) = true;
+  optional uint32 item_number = 1;
+  bytes rand = 2;
+  bytes sres = 3;
+  bytes kc = 4;
+}
+
+// MME-User-State (TS 29.272 §7.3.112)
+//
+// MME-User-State ::= < AVP Header: 1497 10415 >
+//   [ User-State ]
+//   *[ AVP ]
+message MmeUserState {
+  option (diam.extensible) = true;
+  optional UserState user_state = 1;
+}
+
+// SGSN-User-State (TS 29.272 §7.3.113)
+//
+// SGSN-User-State ::= < AVP Header: 1498 10415 >
+//   [ User-State ]
+//   *[ AVP ]
+message SgsnUserState {
+  option (diam.extensible) = true;
+  optional UserState user_state = 1;
+}
+
+// MME-Location-Information (TS 29.272 §7.3.115)
+//
+// MME-Location-Information ::= < AVP Header: 1600 10415 >
+//   [ E-UTRAN-Cell-Global-Identity ]
+//   [ Tracking-Area-Identity ]
+//   [ Geographical-Information ]
+//   [ Geodetic-Information ]
+//   [ Current-Location-Retrieved ]
+//   [ Age-Of-Location-Information ]
+//   [ User-CSG-Information ]
+//   [ eNodeB-ID ]
+//   [ Extended-eNodeB-ID ]
+//   *[ AVP ]
+message MmeLocationInformation {
+  option (diam.extensible) = true;
+  optional bytes e_utran_cell_global_identity = 1;
+  optional bytes tracking_area_identity = 2;
+  optional bytes geographical_information = 3;
+  optional bytes geodetic_information = 4;
+  optional CurrentLocationRetrieved current_location_retrieved = 5;
+  optional uint32 age_of_location_information = 6;
+  optional UserCsgInformation user_csg_information = 7;
+  optional bytes enodeb_id = 8;
+  optional bytes extended_enodeb_id = 9;
+}
+
+// SGSN-Location-Information (TS 29.272 §7.3.116)
+//
+// SGSN-Location-Information ::= < AVP Header: 1601 10415 >
+//   [ Cell-Global-Identity ]
+//   [ Location-Area-Identity ]
+//   [ Service-Area-Identity ]
+//   [ Routing-Area-Identity ]
+//   [ Geographical-Information ]
+//   [ Geodetic-Information ]
+//   [ Current-Location-Retrieved ]
+//   [ Age-Of-Location-Information ]
+//   [ User-CSG-Information ]
+//   *[ AVP ]
+message SgsnLocationInformation {
+  option (diam.extensible) = true;
+  optional bytes cell_global_identity = 1;
+  optional bytes location_area_identity = 2;
+  optional bytes service_area_identity = 3;
+  optional bytes routing_area_identity = 4;
+  optional bytes geographical_information = 5;
+  optional bytes geodetic_information = 6;
+  optional CurrentLocationRetrieved current_location_retrieved = 7;
+  optional uint32 age_of_location_information = 8;
+  optional UserCsgInformation user_csg_information = 9;
+}
+
+// Idle-Status-Indication (TS 29.128 §6.4.32)
+//
+// Idle-Status-Indication ::= < AVP Header: 4322 10415 >
+//   [ Idle-Status-Timestamp ]
+//   [ Active-Time ]
+//   [ Subscribed-Periodic-RAU-TAU-Timer ]
+//   [ eDRX-Cycle-Length ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   *[ AVP ]
+message IdleStatusIndication {
+  option (diam.extensible) = true;
+  optional uint32 idle_status_timestamp = 1;
+  optional uint32 active_time = 2;
+  optional uint32 subscribed_periodic_rau_tau_timer = 3;
+  optional EdrxCycleLength edrx_cycle_length = 4;
+  optional int32 dl_buffering_suggested_packet_count = 5;
+}
+
+// PDN-Connectivity-Status-Report (TS 29.336 §8.4.77)
+//
+// PDN-Connectivity-Status-Report ::= < AVP Header: 3181 10415 >
+//   { Service-Selection }
+//   { PDN-Connectivity-Status-Type }
+//   [ PDN-Type ]
+//   [ Non-IP-PDN-Type-Indicator ]
+//   [ Non-IP-Data-Delivery-Mechanism ]
+//   *2[ Served-Party-IP-Address ]
+//   *[ AVP ]
+message PdnConnectivityStatusReport {
+  option (diam.extensible) = true;
+  string service_selection = 1;
+  uint32 pdn_connectivity_status_type = 2;
+  optional PdnType pdn_type = 3;
+  optional NonIpPdnTypeIndicator non_ip_pdn_type_indicator = 4;
+  optional uint32 non_ip_data_delivery_mechanism = 5;
+  repeated bytes served_party_ip_address = 6 [(diam.max) = 2];
+}
+
+// Service-Report (TS 29.336 §8.4.47)
+//
+// Service-Report ::= < AVP Header: 3152 10415 >
+//   [ Service-Result ]
+//   [ Node-Type ]
+//   *[ AVP ]
+message ServiceReport {
+  option (diam.extensible) = true;
+  optional ServiceResult service_result = 1;
+  optional uint32 node_type = 2;
+}
+
+// MIP-Home-Agent-Host (RFC 4004 §7.11)
+//
+// MIP-Home-Agent-Host ::= < AVP Header: 348 >
+//   { Destination-Realm }
+//   { Destination-Host }
+//   *[ AVP ]
+message MipHomeAgentHost {
+  option (diam.extensible) = true;
+  string destination_realm = 1;
+  string destination_host = 2;
+}
+
+// LCS-PrivacyException (TS 29.272 §7.3.86)
+//
+// LCS-PrivacyException ::= < AVP Header: 1475 10415 >
+//   { SS-Code }
+//   { SS-Status }
+//   [ Notification-To-UE-User ]
+//   *[ External-Client ]
+//   *[ PLMN-Client ]
+//   *[ Service-Type ]
+//   *[ AVP ]
+message LcsPrivacyexception {
+  option (diam.extensible) = true;
+  bytes ss_code = 1;
+  bytes ss_status = 2;
+  optional NotificationToUeUser notification_to_ue_user = 3;
+  repeated ExternalClient external_client = 4;
+  repeated PlmnClient plmn_client = 5;
+  repeated ServiceType service_type = 6;
+}
+
+// MO-LR (TS 29.272 §7.3.96)
+//
+// MO-LR ::= < AVP Header: 1485 10415 >
+//   { SS-Code }
+//   { SS-Status }
+//   *[ AVP ]
+message MoLr {
+  option (diam.extensible) = true;
+  bytes ss_code = 1;
+  bytes ss_status = 2;
+}
+
+// APN-Configuration (TS 29.272 §7.3.35)
+//
+// APN-Configuration ::= < AVP Header: 1430 10415 >
+//   { Context-Identifier }
+//   *2[ Served-Party-IP-Address ]
+//   { PDN-Type }
+//   { Service-Selection }
+//   [ EPS-Subscribed-QoS-Profile ]
+//   [ VPLMN-Dynamic-Address-Allowed ]
+//   [ MIP6-Agent-Info ]
+//   [ Visited-Network-Identifier ]
+//   [ PDN-GW-Allocation-Type ]
+//   [ 3GPP-Charging-Characteristics ]
+//   [ AMBR ]
+//   *[ Specific-APN-Info ]
+//   [ APN-OI-Replacement ]
+//   [ SIPTO-Permission ]
+//   [ LIPA-Permission ]
+//   [ Restoration-Priority ]
+//   [ SIPTO-Local-Network-Permission ]
+//   [ WLAN-offloadability ]
+//   [ Non-IP-PDN-Type-Indicator ]
+//   [ Non-IP-Data-Delivery-Mechanism ]
+//   [ SCEF-ID ]
+//   [ SCEF-Realm ]
+//   [ Preferred-Data-Mode ]
+//   [ PDN-Connection-Continuity ]
+//   [ RDS-Indicator ]
+//   [ Interworking-5GS-Indicator ]
+//   [ Ethernet-PDN-Type-Indicator ]
+//   *[ AVP ]
+message ApnConfiguration {
+  option (diam.extensible) = true;
+  uint32 context_identifier = 1;
+  repeated bytes served_party_ip_address = 2 [(diam.max) = 2];
+  PdnType pdn_type = 3;
+  string service_selection = 4;
+  optional EpsSubscribedQosProfile eps_subscribed_qos_profile = 5;
+  optional VplmnDynamicAddressAllowed vplmn_dynamic_address_allowed = 6;
+  optional Mip6AgentInfo mip6_agent_info = 7;
+  optional bytes visited_network_identifier = 8;
+  optional PdnGwAllocationType pdn_gw_allocation_type = 9;
+  optional string tgpp_charging_characteristics = 10;
+  optional Ambr ambr = 11;
+  repeated SpecificApnInfo specific_apn_info = 12;
+  optional string apn_oi_replacement = 13;
+  optional SiptoPermission sipto_permission = 14;
+  optional LipaPermission lipa_permission = 15;
+  optional uint32 restoration_priority = 16;
+  optional uint32 sipto_local_network_permission = 17;
+  optional WlanOffloadability wlan_offloadability = 18;
+  optional NonIpPdnTypeIndicator non_ip_pdn_type_indicator = 19;
+  optional uint32 non_ip_data_delivery_mechanism = 20;
+  optional string scef_id = 21;
+  optional string scef_realm = 22;
+  optional uint32 preferred_data_mode = 23;
+  optional uint32 pdn_connection_continuity = 24;
+  optional RdsIndicator rds_indicator = 25;
+  optional Interworking5gsIndicator interworking5gs_indicator = 26 [(diam.avp) = "INTERWORKING_5GS_INDICATOR"];
+  optional EthernetPdnTypeIndicator ethernet_pdn_type_indicator = 27;
+}
+
+// MDT-Configuration (TS 29.272 §7.3.136)
+//
+// MDT-Configuration ::= < AVP Header: 1622 10415 >
+//   { Job-Type }
+//   [ Area-Scope ]
+//   [ List-Of-Measurements ]
+//   [ Reporting-Trigger ]
+//   [ Report-Interval ]
+//   [ Report-Amount ]
+//   [ Event-Threshold-RSRP ]
+//   [ Event-Threshold-RSRQ ]
+//   [ Logging-Interval ]
+//   [ Logging-Duration ]
+//   [ Measurement-Period-LTE ]
+//   [ Measurement-Period-UMTS ]
+//   [ Collection-Period- RRM-LTE ]
+//   [ Collection-Period-RRM-UMTS ]
+//   [ Positioning-Method ]
+//   [ Measurement-Quantity ]
+//   [ Event-Threshold-Event-1F ]
+//   [ Event-Threshold-Event-1I ]
+//   *[ MDT-Allowed-PLMN-Id ]
+//   *[ MBSFN-Area ]
+//   *[ AVP ]
+message MdtConfiguration {
+  option (diam.extensible) = true;
+  int32 job_type = 1;
+  optional AreaScope area_scope = 2;
+  optional uint32 list_of_measurements = 3;
+  optional uint32 reporting_trigger = 4;
+  optional int32 report_interval = 5;
+  optional int32 report_amount = 6;
+  optional uint32 event_threshold_rsrp = 7;
+  optional uint32 event_threshold_rsrq = 8;
+  optional int32 logging_interval = 9;
+  optional int32 logging_duration = 10;
+  optional int32 measurement_period_lte = 11;
+  optional int32 measurement_period_umts = 12;
+  optional int32 collection_period_rrm_lte = 13;
+  optional int32 collection_period_rrm_umts = 14;
+  optional bytes positioning_method = 15;
+  optional bytes measurement_quantity = 16;
+  optional int32 event_threshold_event1f = 17 [(diam.avp) = "EVENT_THRESHOLD_EVENT_1F"];
+  optional int32 event_threshold_event1i = 18 [(diam.avp) = "EVENT_THRESHOLD_EVENT_1I"];
+  repeated bytes mdt_allowed_plmn_id = 19;
+  repeated MbsfnArea mbsfn_area = 20;
+}
+
+// MDT-Configuration-NR (TS 29.272 §7.3.245)
+//
+// MDT-Configuration-NR ::= < AVP Header: 1720 10415 >
+//   { Job-Type }
+//   [ Area-Scope ]
+//   [ List-Of-Measurements ]
+//   [ Reporting-Trigger ]
+//   [ Report-Interval ]
+//   [ Report-Amount ]
+//   [ Event-Threshold-RSRP ]
+//   [ Event-Threshold-RSRQ ]
+//   [ Event-Threshold-SINR ]
+//   [ Collection-Period-RRM-NR ]
+//   [ Collection-Period-M6-NR ]
+//   [ Collection-Period-M7-NR ]
+//   [ Positioning-Method ]
+//   *[ Sensor-Measurement ]
+//   *[ MDT-Allowed-PLMN-Id ]
+//   *[ AVP ]
+message MdtConfigurationNr {
+  option (diam.extensible) = true;
+  int32 job_type = 1;
+  optional AreaScope area_scope = 2;
+  optional uint32 list_of_measurements = 3;
+  optional uint32 reporting_trigger = 4;
+  optional int32 report_interval = 5;
+  optional int32 report_amount = 6;
+  optional uint32 event_threshold_rsrp = 7;
+  optional uint32 event_threshold_rsrq = 8;
+  optional uint32 event_threshold_sinr = 9;
+  optional int32 collection_period_rrm_nr = 10;
+  optional int32 collection_period_m6_nr = 11;
+  optional uint32 collection_period_m7_nr = 12;
+  optional bytes positioning_method = 13;
+  repeated SensorMeasurement sensor_measurement = 14;
+  repeated bytes mdt_allowed_plmn_id = 15;
+}
+
+// PDP-Context (TS 29.272 §7.3.74)
+//
+// PDP-Context ::= < AVP Header: 1469 10415 >
+//   { Context-Identifier }
+//   { PDP-Type }
+//   [ PDP-Address ]
+//   { QoS-Subscribed }
+//   [ VPLMN-Dynamic-Address-Allowed ]
+//   { Service-Selection }
+//   [ 3GPP-Charging-Characteristics ]
+//   [ Ext-PDP-Type ]
+//   [ Ext-PDP-Address ]
+//   [ AMBR ]
+//   [ APN-OI-Replacement ]
+//   [ SIPTO-Permission ]
+//   [ LIPA-Permission ]
+//   [ Restoration-Priority ]
+//   [ SIPTO-Local-Network-Permission ]
+//   [ Non-IP-Data-Delivery-Mechanism ]
+//   [ SCEF-ID ]
+//   *[ AVP ]
+message PdpContext {
+  option (diam.extensible) = true;
+  uint32 context_identifier = 1;
+  bytes pdp_type = 2;
+  optional bytes pdp_address = 3;
+  bytes qos_subscribed = 4;
+  optional VplmnDynamicAddressAllowed vplmn_dynamic_address_allowed = 5;
+  string service_selection = 6;
+  optional string tgpp_charging_characteristics = 7;
+  optional bytes ext_pdp_type = 8;
+  optional bytes ext_pdp_address = 9;
+  optional Ambr ambr = 10;
+  optional string apn_oi_replacement = 11;
+  optional SiptoPermission sipto_permission = 12;
+  optional LipaPermission lipa_permission = 13;
+  optional uint32 restoration_priority = 14;
+  optional uint32 sipto_local_network_permission = 15;
+  optional uint32 non_ip_data_delivery_mechanism = 16;
+  optional string scef_id = 17;
+}
+
+// Communication-Pattern-Set (TS 29.272 §7.3.194)
+//
+// Communication-Pattern-Set ::= < AVP Header: 3114 10415 >
+//   [ Periodic-Communication-Indicator ]
+//   [ Communication-Duration-Time ]
+//   [ Periodic-Time ]
+//   *[ Scheduled-Communication-Time ]
+//   [ Stationary-Indication ]
+//   [ Reference-ID-Validity-Time ]
+//   [ Traffic-Profile ]
+//   [ Battery-Indicator ]
+//   *[ AVP ]
+message CommunicationPatternSet {
+  option (diam.extensible) = true;
+  optional uint32 periodic_communication_indicator = 1;
+  optional uint32 communication_duration_time = 2;
+  optional uint32 periodic_time = 3;
+  repeated ScheduledCommunicationTime scheduled_communication_time = 4;
+  optional uint32 stationary_indication = 5;
+  optional uint32 reference_id_validity_time = 6;
+  optional uint32 traffic_profile = 7;
+  optional uint32 battery_indicator = 8;
+}
+
+// MTC-Provider-Info (TS 29.336 §8.4.74)
+//
+// MTC-Provider-Info ::= < AVP Header: 3178 10415 >
+//   [ MTC-Provider-ID ]
+//   *[ AVP ]
+message MtcProviderInfo {
+  option (diam.extensible) = true;
+  optional string mtc_provider_id = 1;
+}
+
+// UE-Reachability-Configuration (TS 29.272 §7.3.197)
+//
+// UE-Reachability-Configuration ::= < AVP Header: 3129 10415 >
+//   [ Reachability-Type ]
+//   [ Maximum-Response-Time ]
+//   *[ AVP ]
+message UeReachabilityConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 reachability_type = 1;
+  optional uint32 maximum_response_time = 2;
+}
+
+// Location-Information-Configuration (TS 29.336 §8.4.15)
+//
+// Location-Information-Configuration ::= < AVP Header: 3135 10415 >
+//   [ MONTE-Location-Type ]
+//   [ Accuracy ]
+//   [ Periodic-Time ]
+//   *[ AVP ]
+message LocationInformationConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 monte_location_type = 1;
+  optional uint32 accuracy = 2;
+  optional uint32 periodic_time = 3;
+}
+
+// PDN-Connectivity-Status-Configuration (TS 29.336 §8.4.76)
+//
+// PDN-Connectivity-Status-Configuration ::= < AVP Header: 3180 10415 >
+//   [ Service-Selection ]
+//   *[ AVP ]
+message PdnConnectivityStatusConfiguration {
+  option (diam.extensible) = true;
+  optional string service_selection = 1;
+}
+
+// UE-PC5-QoS (TS 29.272 §7.3.236)
+//
+// UE-PC5-QoS ::= < AVP Header: 1711 10415 >
+//   1*{ PC5-QoS-Flow }
+//   [ PC5-Link-AMBR ]
+//   *[ AVP ]
+message UePc5Qos {
+  option (diam.extensible) = true;
+  repeated Pc5QosFlow pc5_qos_flow = 1 [(diam.min) = 1];
+  optional int32 pc5_link_ambr = 2;
+}
+
+// User-CSG-Information (TS 32.299 §7.2.240A)
+//
+// User-CSG-Information ::= < AVP Header: 2319 >
+//   { CSG-Id }
+//   { CSG-Access-Mode }
+//   [ CSG-Membership-Indication ]
+message UserCsgInformation {
+  uint32 csg_id = 1;
+  CsgAccessMode csg_access_mode = 2;
+  optional CsgMembershipIndication csg_membership_indication = 3;
+}
+
+// Service-Result (TS 29.336 §8.4.37)
+//
+// Service-Result ::= < AVP Header: 3146 10415 >
+//   [ Vendor-Id ]
+//   [ Service-Result-Code ]
+//   *[ AVP ]
+message ServiceResult {
+  option (diam.extensible) = true;
+  optional uint32 vendor_id = 1;
+  optional uint32 service_result_code = 2;
+}
+
+// External-Client (TS 29.272 §7.3.90)
+//
+// External-Client ::= < AVP Header: 1479 10415 >
+//   { Client-Identity }
+//   [ GMLC-Restriction ]
+//   [ Notification-To-UE-User ]
+//   *[ AVP ]
+message ExternalClient {
+  option (diam.extensible) = true;
+  bytes client_identity = 1;
+  optional GmlcRestriction gmlc_restriction = 2;
+  optional NotificationToUeUser notification_to_ue_user = 3;
+}
+
+// Service-Type (TS 29.272 §7.3.94)
+//
+// Service-Type ::= < AVP Header: 1483 10415 >
+//   { ServiceTypeIdentity }
+//   [ GMLC-Restriction ]
+//   [ Notification-To-UE-User ]
+//   *[ AVP ]
+message ServiceType {
+  option (diam.extensible) = true;
+  uint32 servicetypeidentity = 1;
+  optional GmlcRestriction gmlc_restriction = 2;
+  optional NotificationToUeUser notification_to_ue_user = 3;
+}
+
+// EPS-Subscribed-QoS-Profile (TS 29.272 §7.3.37)
+//
+// EPS-Subscribed-QoS-Profile ::= < AVP Header: 1431 10415 >
+//   { QoS-Class-Identifier }
+//   { Allocation-Retention-Priority }
+//   *[ AVP ]
+message EpsSubscribedQosProfile {
+  option (diam.extensible) = true;
+  QosClassIdentifier qos_class_identifier = 1;
+  AllocationRetentionPriority allocation_retention_priority = 2;
+}
+
+// WLAN-offloadability (TS 29.272 §7.3.181)
+//
+// WLAN-offloadability ::= < AVP Header: 1667 >
+//   [ WLAN-offloadability-EUTRAN ]
+//   [ WLAN-offloadability-UTRAN ]
+//   *[ AVP ]
+message WlanOffloadability {
+  option (diam.extensible) = true;
+  optional uint32 wlan_offloadability_eutran = 1;
+  optional uint32 wlan_offloadability_utran = 2;
+}
+
+// Area-Scope (TS 29.272 §7.3.138)
+//
+// Area-Scope ::= < AVP Header: 1623 10415 >
+//   *[ Cell-Global-Identity ]
+//   *[ E-UTRAN-Cell-Global-Identity ]
+//   *[ Routing-Area-Identity ]
+//   *[ Location-Area-Identity ]
+//   *[ Tracking-Area-Identity ]
+//   *[ NR-Cell-Global-Identity ]
+//   *[ AVP ]
+message AreaScope {
+  option (diam.extensible) = true;
+  repeated bytes cell_global_identity = 1;
+  repeated bytes e_utran_cell_global_identity = 2;
+  repeated bytes routing_area_identity = 3;
+  repeated bytes location_area_identity = 4;
+  repeated bytes tracking_area_identity = 5;
+  repeated bytes nr_cell_global_identity = 6;
+}
+
+// MBSFN-Area (TS 29.272 §7.3.219)
+//
+// MBSFN-Area ::= < AVP Header: 1694 10415 >
+//   [ MBSFN-Area-ID ]
+//   [ Carrier-Frequency ]
+//   *[ AVP ]
+message MbsfnArea {
+  option (diam.extensible) = true;
+  optional uint32 mbsfn_area_id = 1;
+  optional uint32 carrier_frequency = 2;
+}
+
+// Scheduled-Communication-Time (TS 29.336 §8.4.30)
+//
+// Scheduled-Communication-Time ::= < AVP Header: 3118 10415 >
+//   [ Day-Of-Week-Mask ]
+//   [ Time-Of-Day-Start ]
+//   [ Time-Of-Day-End ]
+//   *[ AVP ]
+message ScheduledCommunicationTime {
+  option (diam.extensible) = true;
+  optional uint32 day_of_week_mask = 1;
+  optional uint32 time_of_day_start = 2;
+  optional uint32 time_of_day_end = 3;
+}
+
+// PC5-QoS-Flow (TS 29.272 §7.3.237)
+//
+// PC5-QoS-Flow ::= < AVP Header: 1712 10415 >
+//   { 5QI }
+//   [ PC5-Flow-Bitrates ]
+//   [ PC5-Range ]
+//   *[ AVP ]
+message Pc5QosFlow {
+  option (diam.extensible) = true;
+  int32 five_qi = 1;
+  optional Pc5FlowBitrates pc5_flow_bitrates = 2;
+  optional int32 pc5_range = 3;
+}
+
+// Allocation-Retention-Priority (TS 29.272 §7.3.40)
+//
+// Allocation-Retention-Priority ::= < AVP Header: 1034 10415 >
+//   { Priority-Level }
+//   [ Pre-emption-Capability ]
+//   [ Pre-emption-Vulnerability ]
+message AllocationRetentionPriority {
+  uint32 priority_level = 1;
+  optional PreEmptionCapability pre_emption_capability = 2;
+  optional PreEmptionVulnerability pre_emption_vulnerability = 3;
+}
+
+// PC5-Flow-Bitrates (TS 29.272 §7.3.239)
+//
+// PC5-Flow-Bitrates ::= < AVP Header: 1714 10415 >
+//   [ Guaranteed-Flow-Bitrates ]
+//   [ Maximum-Flow-Bitrates ]
+message Pc5FlowBitrates {
+  optional int32 guaranteed_flow_bitrates = 1;
+  optional int32 maximum_flow_bitrates = 2;
+}
+
+// Update-Location-Request (7.2.3)
+//
+// < Update-Location-Request > ::= < Diameter Header: 316, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   [ Terminal-Information ]
+//   { RAT-Type }
+//   { ULR-Flags }
+//   [ UE-SRVCC-Capability ]
+//   { Visited-PLMN-Id }
+//   [ SGSN-Number ]
+//   [ Homogeneous-Support-of-IMS-Voice-Over-PS-Sessions ]
+//   [ GMLC-Address ]
+//   *[ Active-APN ]
+//   [ Equivalent-PLMN-List ]
+//   [ MME-Number-for-MT-SMS ]
+//   [ SMS-Register-Request ]
+//   [ SGs-MME-Identity ]
+//   [ Coupled-Node-Diameter-ID ]
+//   [ Adjacent-PLMNs ]
+//   [ Supported-Services ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message UpdateLocationRequest {
+  option (diam.command) = {
+    code: 316
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  repeated SupportedFeatures supported_features = 11;
+  optional TerminalInformation terminal_information = 12;
+  RatType rat_type = 13;
+  uint32 ulr_flags = 14;
+  optional UeSrvccCapability ue_srvcc_capability = 15;
+  bytes visited_plmn_id = 16;
+  optional bytes sgsn_number = 17;
+  optional HomogeneousSupportOfImsVoiceOverPsSessions homogeneous_support_of_ims_voice_over_ps_sessions = 18;
+  optional bytes gmlc_address = 19;
+  repeated ActiveApn active_apn = 20;
+  optional EquivalentPlmnList equivalent_plmn_list = 21;
+  optional bytes mme_number_for_mt_sms = 22;
+  optional SmsRegisterRequest sms_register_request = 23;
+  optional string sgs_mme_identity = 24;
+  optional string coupled_node_diameter_id = 25;
+  optional AdjacentPlmns adjacent_plmns = 26;
+  optional SupportedServices supported_services = 27;
+  repeated godiam.base.ProxyInfo proxy_info = 28;
+  repeated string route_record = 29;
+}
+
+// Update-Location-Answer (7.2.4)
+//
+// < Update-Location-Answer > ::= < Diameter Header: 316, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   [ Error-Diagnostic ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ ULA-Flags ]
+//   [ Subscription-Data ]
+//   *[ Reset-ID ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message UpdateLocationAnswer {
+  option (diam.command) = {
+    code: 316
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  optional ErrorDiagnostic error_diagnostic = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional OcOlr oc_olr = 11;
+  repeated Load load = 12;
+  repeated SupportedFeatures supported_features = 13;
+  optional uint32 ula_flags = 14;
+  optional SubscriptionData subscription_data = 15;
+  repeated bytes reset_id = 16;
+  optional godiam.base.FailedAvp failed_avp = 17;
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+}
+
+// Cancel-Location-Request (7.2.7)
+//
+// < Cancel-Location-Request > ::= < Diameter Header: 317, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   *[ Supported-Features ]
+//   { Cancellation-Type }
+//   [ CLR-Flags ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message CancelLocationRequest {
+  option (diam.command) = {
+    code: 317
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  repeated SupportedFeatures supported_features = 10;
+  CancellationType cancellation_type = 11;
+  optional uint32 clr_flags = 12;
+  repeated godiam.base.ProxyInfo proxy_info = 13;
+  repeated string route_record = 14;
+}
+
+// Cancel-Location-Answer (7.2.8)
+//
+// < Cancel-Location-Answer > ::= < Diameter Header: 317, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   *[ Supported-Features ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message CancelLocationAnswer {
+  option (diam.command) = {
+    code: 317
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  repeated SupportedFeatures supported_features = 4;
+  optional uint32 result_code = 5;
+  optional godiam.base.ExperimentalResult experimental_result = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional godiam.base.FailedAvp failed_avp = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
+
+// Authentication-Information-Request (7.2.5)
+//
+// < Authentication-Information-Request > ::= < Diameter Header: 318, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   [ Requested-EUTRAN-Authentication-Info ]
+//   [ Requested-UTRAN-GERAN-Authentication-Info ]
+//   { Visited-PLMN-Id }
+//   [ AIR-Flags ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message AuthenticationInformationRequest {
+  option (diam.command) = {
+    code: 318
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  repeated SupportedFeatures supported_features = 11;
+  optional RequestedEutranAuthenticationInfo requested_eutran_authentication_info = 12;
+  optional RequestedUtranGeranAuthenticationInfo requested_utran_geran_authentication_info = 13;
+  bytes visited_plmn_id = 14;
+  optional uint32 air_flags = 15;
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// Authentication-Information-Answer (7.2.6)
+//
+// < Authentication-Information-Answer > ::= < Diameter Header: 318, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   [ Error-Diagnostic ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ Authentication-Info ]
+//   [ UE-Usage-Type ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message AuthenticationInformationAnswer {
+  option (diam.command) = {
+    code: 318
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  optional ErrorDiagnostic error_diagnostic = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional OcOlr oc_olr = 11;
+  repeated Load load = 12;
+  repeated SupportedFeatures supported_features = 13;
+  optional AuthenticationInfo authentication_info = 14;
+  optional uint32 ue_usage_type = 15;
+  optional godiam.base.FailedAvp failed_avp = 16;
+  repeated godiam.base.ProxyInfo proxy_info = 17;
+  repeated string route_record = 18;
+}
+
+// Insert-Subscriber-Data-Request (7.2.9)
+//
+// < Insert-Subscriber-Data-Request > ::= < Diameter Header: 319, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   *[ Supported-Features ]
+//   { Subscription-Data }
+//   [ IDR- Flags ]
+//   *[ Reset-ID ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message InsertSubscriberDataRequest {
+  option (diam.command) = {
+    code: 319
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  repeated SupportedFeatures supported_features = 10;
+  SubscriptionData subscription_data = 11;
+  optional uint32 idr_flags = 12;
+  repeated bytes reset_id = 13;
+  repeated godiam.base.ProxyInfo proxy_info = 14;
+  repeated string route_record = 15;
+}
+
+// Insert-Subscriber-Data-Answer (7.2.10)
+//
+// < Insert-Subscriber-Data-Answer > ::= < Diameter Header: 319, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   *[ Supported-Features ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ IMS-Voice-Over-PS-Sessions-Supported ]
+//   [ Last-UE-Activity-Time ]
+//   [ RAT-Type ]
+//   [ IDA-Flags ]
+//   [ EPS-User-State ]
+//   [ EPS-Location-Information ]
+//   [ Local-Time-Zone ]
+//   [ Supported-Services ]
+//   *[ Monitoring-Event-Report ]
+//   *[ Monitoring-Event-Config-Status ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message InsertSubscriberDataAnswer {
+  option (diam.command) = {
+    code: 319
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  repeated SupportedFeatures supported_features = 4;
+  optional uint32 result_code = 5;
+  optional godiam.base.ExperimentalResult experimental_result = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional ImsVoiceOverPsSessionsSupported ims_voice_over_ps_sessions_supported = 10;
+  optional uint32 last_ue_activity_time = 11;
+  optional RatType rat_type = 12;
+  optional uint32 ida_flags = 13;
+  optional EpsUserState eps_user_state = 14;
+  optional EpsLocationInformation eps_location_information = 15;
+  optional LocalTimeZone local_time_zone = 16;
+  optional SupportedServices supported_services = 17;
+  repeated MonitoringEventReport monitoring_event_report = 18;
+  repeated MonitoringEventConfigStatus monitoring_event_config_status = 19;
+  optional godiam.base.FailedAvp failed_avp = 20;
+  repeated godiam.base.ProxyInfo proxy_info = 21;
+  repeated string route_record = 22;
+}
+
+// Delete-Subscriber-Data-Request (7.2.11)
+//
+// < Delete-Subscriber-Data-Request > ::= < Diameter Header: 320, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   *[ Supported-Features ]
+//   { DSR-Flags }
+//   [ SCEF-ID ]
+//   *[ Context-Identifier ]
+//   [ Trace-Reference ]
+//   *[ TS-Code ]
+//   *[ SS-Code ]
+//   [ eDRX-Related-RAT ]
+//   *[ External-Identifier ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message DeleteSubscriberDataRequest {
+  option (diam.command) = {
+    code: 320
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  repeated SupportedFeatures supported_features = 10;
+  uint32 dsr_flags = 11;
+  optional string scef_id = 12;
+  repeated uint32 context_identifier = 13;
+  optional bytes trace_reference = 14;
+  repeated bytes ts_code = 15;
+  repeated bytes ss_code = 16;
+  optional EdrxRelatedRat edrx_related_rat = 17;
+  repeated string external_identifier = 18;
+  repeated godiam.base.ProxyInfo proxy_info = 19;
+  repeated string route_record = 20;
+}
+
+// Delete-Subscriber-Data-Answer (7.2.12)
+//
+// < Delete-Subscriber-Data-Answer > ::= < Diameter Header: 320, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   *[ Supported-Features ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ DSA-Flags ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message DeleteSubscriberDataAnswer {
+  option (diam.command) = {
+    code: 320
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  repeated SupportedFeatures supported_features = 4;
+  optional uint32 result_code = 5;
+  optional godiam.base.ExperimentalResult experimental_result = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional uint32 dsa_flags = 10;
+  optional godiam.base.FailedAvp failed_avp = 11;
+  repeated godiam.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
+
+// Purge-UE-Request (7.2.13)
+//
+// < Purge-UE-Request > ::= < Diameter Header: 321, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   [ PUR-Flags ]
+//   *[ Supported-Features ]
+//   [ EPS-Location-Information ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message PurgeUeRequest {
+  option (diam.command) = {
+    code: 321
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional uint32 pur_flags = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional EpsLocationInformation eps_location_information = 13;
+  repeated godiam.base.ProxyInfo proxy_info = 14;
+  repeated string route_record = 15;
+}
+
+// Purge-UE-Answer (7.2.14)
+//
+// < Purge-UE-Answer > ::= < Diameter Header: 321, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   *[ Supported-Features ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   [ PUA-Flags ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message PurgeUeAnswer {
+  option (diam.command) = {
+    code: 321
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  repeated SupportedFeatures supported_features = 4;
+  optional uint32 result_code = 5;
+  optional godiam.base.ExperimentalResult experimental_result = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional OcOlr oc_olr = 11;
+  repeated Load load = 12;
+  optional uint32 pua_flags = 13;
+  optional godiam.base.FailedAvp failed_avp = 14;
+  repeated godiam.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// Reset-Request (7.2.15)
+//
+// < Reset-Request > ::= < Diameter Header: 322, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   *[ Supported-Features ]
+//   *[ User-Id ]
+//   *[ Reset-ID ]
+//   [ Subscription-Data ]
+//   [ Subscription-Data-Deletion ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ResetRequest {
+  option (diam.command) = {
+    code: 322
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  repeated SupportedFeatures supported_features = 9;
+  repeated string user_id = 10;
+  repeated bytes reset_id = 11;
+  optional SubscriptionData subscription_data = 12;
+  optional SubscriptionDataDeletion subscription_data_deletion = 13;
+  repeated godiam.base.ProxyInfo proxy_info = 14;
+  repeated string route_record = 15;
+}
+
+// Reset-Answer (7.2.16)
+//
+// < Reset-Answer > ::= < Diameter Header: 322, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   *[ Supported-Features ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ResetAnswer {
+  option (diam.command) = {
+    code: 322
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  repeated SupportedFeatures supported_features = 4;
+  optional uint32 result_code = 5;
+  optional godiam.base.ExperimentalResult experimental_result = 6;
+  godiam.base.AuthSessionState auth_session_state = 7;
+  string origin_host = 8;
+  string origin_realm = 9;
+  optional godiam.base.FailedAvp failed_avp = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
+
+// Notify-Request (7.2.17)
+//
+// < Notify-Request > ::= < Diameter Header: 323, REQ, PXY, 16777251 >
+//   < Session-Id >
+//   [ Vendor-Specific-Application-Id ]
+//   [ DRMP ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   [ Terminal-Information ]
+//   [ MIP6-Agent-Info ]
+//   [ Visited-Network-Identifier ]
+//   [ Context-Identifier ]
+//   [ Service-Selection ]
+//   [ Alert-Reason ]
+//   [ UE-SRVCC-Capability ]
+//   [ NOR-Flags ]
+//   [ Homogeneous-Support-of-IMS-Voice-Over-PS-Sessions ]
+//   [ Maximum-UE-Availability-Time ]
+//   *[ Monitoring-Event-Config-Status ]
+//   [ Emergency-Services ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message NotifyRequest {
+  option (diam.command) = {
+    code: 323
+    app_id: 16777251
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  optional Drmp drmp = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  repeated SupportedFeatures supported_features = 11;
+  optional TerminalInformation terminal_information = 12;
+  optional Mip6AgentInfo mip6_agent_info = 13;
+  optional bytes visited_network_identifier = 14;
+  optional uint32 context_identifier = 15;
+  optional string service_selection = 16;
+  optional AlertReason alert_reason = 17;
+  optional UeSrvccCapability ue_srvcc_capability = 18;
+  optional uint32 nor_flags = 19;
+  optional HomogeneousSupportOfImsVoiceOverPsSessions homogeneous_support_of_ims_voice_over_ps_sessions = 20;
+  optional uint32 maximum_ue_availability_time = 21;
+  repeated MonitoringEventConfigStatus monitoring_event_config_status = 22;
+  optional uint32 emergency_services = 23;
+  repeated godiam.base.ProxyInfo proxy_info = 24;
+  repeated string route_record = 25;
+}
+
+// Notify-Answer (7.2.18)
+//
+// < Notify-Answer > ::= < Diameter Header: 323, PXY, 16777251 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message NotifyAnswer {
+  option (diam.command) = {
+    code: 323
+    app_id: 16777251
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional godiam.base.FailedAvp failed_avp = 13;
+  repeated godiam.base.ProxyInfo proxy_info = 14;
+  repeated string route_record = 15;
+}
