@@ -14,7 +14,7 @@ import (
 // and encoding the message decoded from them.
 func benchPair(b *testing.B, name string) {
 	var p pair
-	for _, c := range pairs() {
+	for _, c := range allPairs() {
 		if c.name == name {
 			p = c
 		}
@@ -76,3 +76,9 @@ func benchPair(b *testing.B, name string) {
 func BenchmarkCER(b *testing.B) { benchPair(b, "CER") }
 
 func BenchmarkSTR(b *testing.B) { benchPair(b, "STR") }
+
+func BenchmarkULR(b *testing.B) { benchPair(b, "ULR") }
+
+// ULA with a Subscription-Data that carries APN, GPRS, LCS, trace and CSG
+// data (about 2.3 kB on the wire).
+func BenchmarkULA(b *testing.B) { benchPair(b, "ULA") }

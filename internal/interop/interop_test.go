@@ -4,6 +4,7 @@ package interop
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -223,6 +224,29 @@ func pairs() []pair {
 	}
 }
 
+// allPairs is every interop sample: the base protocol and S6a/S6d.
+func allPairs() []pair { return append(pairs(), s6aPairs()...) }
+
+// noUnknown reports the first AVP in avps, or nested in them, that
+// go-diameter decoded as datatype.Unknown, other than the known gaps of its
+// dictionary.
+func noUnknown(avps []*fd.AVP, path string, gaps map[[2]uint32]string) error {
+	for _, a := range avps {
+		where := fmt.Sprintf("%s/%d", path, a.Code)
+		switch d := a.Data.(type) {
+		case datatype.Unknown:
+			if _, gap := gaps[[2]uint32{a.Code, a.VendorID}]; !gap {
+				return fmt.Errorf("go-diameter decoded AVP %s (vendor %d) as Unknown", where, a.VendorID)
+			}
+		case *fd.GroupedAVP:
+			if err := noUnknown(d.AVP, where, gaps); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func serialize(t testing.TB, m *fd.Message) []byte {
 	t.Helper()
 	b, err := m.Serialize()
@@ -235,7 +259,7 @@ func serialize(t testing.TB, m *fd.Message) []byte {
 // go-diameter encodes; go-diam decodes, validates and re-encodes the same
 // bytes.
 func TestFiorixToGoDiam(t *testing.T) {
-	for _, p := range pairs() {
+	for _, p := range allPairs() {
 		t.Run(p.name, func(t *testing.T) {
 			wire := serialize(t, p.fiorix)
 			m, err := diam.Decode(wire)
@@ -268,7 +292,7 @@ func TestFiorixToGoDiam(t *testing.T) {
 // go-diam encodes; go-diameter decodes with its own dictionary and
 // re-encodes the same bytes.
 func TestGoDiamToFiorix(t *testing.T) {
-	for _, p := range pairs() {
+	for _, p := range allPairs() {
 		t.Run(p.name, func(t *testing.T) {
 			wire, err := p.godiam.AppendMarshal(nil)
 			if err != nil {
@@ -278,8 +302,16 @@ func TestGoDiamToFiorix(t *testing.T) {
 			if err != nil {
 				t.Fatalf("go-diameter ReadMessage: %v", err)
 			}
-			if m.Header.HopByHopID != hopByHop || m.Header.EndToEndID != endToEnd || m.Header.ApplicationID != 0 {
-				t.Fatalf("header = %+v", m.Header)
+			if m.Header.HopByHopID != hopByHop || m.Header.EndToEndID != endToEnd ||
+				m.Header.ApplicationID != p.fiorix.Header.ApplicationID || m.Header.CommandCode != p.fiorix.Header.CommandCode ||
+				m.Header.CommandFlags != p.fiorix.Header.CommandFlags {
+				t.Fatalf("header = %+v, want %+v", m.Header, p.fiorix.Header)
+			}
+			// Every AVP, at any depth, must be one go-diameter's dictionary
+			// knows for this application: an AVP it decodes as Unknown has a
+			// code or vendor go-diameter does not recognise.
+			if err := noUnknown(m.AVP, "", fiorixS6aGaps); err != nil {
+				t.Fatal(err)
 			}
 
 			want := p.fiorix
