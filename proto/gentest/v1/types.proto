@@ -50,6 +50,19 @@ enum Color {
   COLOR_RED = 1;
 }
 
+// Enum names with an acronym or a digit: protogen's Go name differs from the
+// proto name (CCRequestType stays, Interworking5gsIndicator becomes
+// Interworking5GsIndicator), and the value prefix must still be stripped.
+enum CCRequestType {
+  CC_REQUEST_TYPE_UNSPECIFIED = 0;
+  CC_REQUEST_TYPE_INITIAL_REQUEST = 1;
+}
+
+enum Interworking5gsIndicator {
+  INTERWORKING5GS_INDICATOR_NOT_SUBSCRIBED = 0;
+  INTERWORKING5GS_INDICATOR_SUBSCRIBED = 1;
+}
+
 // Leaf ::= < AVP Header > { Leaf-Value }
 message Leaf {
   uint32 leaf_value = 1;

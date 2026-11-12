@@ -21,12 +21,26 @@ func genDictConsts(g *protogen.GeneratedFile, e *protogen.Enum) {
 	g.P()
 }
 
+// stripEnumPrefix removes the enum's name from a value name: the shortest
+// leading run of words that spells the enum name, ignoring case and
+// underscores. Matching on letters rather than on a snake_case rendering of
+// the name keeps it right for names with acronyms or digits (CCRequestType
+// -> CC_REQUEST_TYPE_, Interworking5gsIndicator -> INTERWORKING5GS_INDICATOR_).
+// A value without the prefix is returned unchanged.
+func stripEnumPrefix(enum, value string) string {
+	for i := 0; i < len(value); i++ {
+		if value[i] == '_' && strings.EqualFold(strings.ReplaceAll(value[:i], "_", ""), enum) {
+			return value[i+1:]
+		}
+	}
+	return value
+}
+
 // genEnum emits a Go type for an Enumerated AVP. The enum's own name is
 // stripped from the value names, and a zero value named *_UNSPECIFIED, which
 // exists only because proto3 demands a zero, is left out.
 func genEnum(g *protogen.GeneratedFile, e *protogen.Enum) {
 	name := e.GoIdent.GoName
-	prefix := strings.ToUpper(snake(name)) + "_"
 	type value struct{ goName, text string }
 	var values []value
 
@@ -38,7 +52,7 @@ func genEnum(g *protogen.GeneratedFile, e *protogen.Enum) {
 		if v.Desc.Number() == 0 && strings.HasSuffix(vn, "_UNSPECIFIED") {
 			continue
 		}
-		text := strings.TrimPrefix(vn, prefix)
+		text := stripEnumPrefix(string(e.Desc.Name()), vn)
 		val := value{goName: name + camel(text), text: text}
 		values = append(values, val)
 		g.P(val.goName, " ", name, " = ", v.Desc.Number())

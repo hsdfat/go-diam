@@ -57,6 +57,42 @@ func (v Color) String() string {
 	return strconv.Itoa(int(v))
 }
 
+// Enum names with an acronym or a digit: protogen's Go name differs from the
+// proto name (CCRequestType stays, Interworking5gsIndicator becomes
+// Interworking5GsIndicator), and the value prefix must still be stripped.
+type CCRequestType int32
+
+const (
+	CCRequestTypeInitialRequest CCRequestType = 1
+)
+
+// String returns the name of a known value and the number otherwise.
+func (v CCRequestType) String() string {
+	switch v {
+	case CCRequestTypeInitialRequest:
+		return "INITIAL_REQUEST"
+	}
+	return strconv.Itoa(int(v))
+}
+
+type Interworking5GsIndicator int32
+
+const (
+	Interworking5GsIndicatorNotSubscribed Interworking5GsIndicator = 0
+	Interworking5GsIndicatorSubscribed    Interworking5GsIndicator = 1
+)
+
+// String returns the name of a known value and the number otherwise.
+func (v Interworking5GsIndicator) String() string {
+	switch v {
+	case Interworking5GsIndicatorNotSubscribed:
+		return "NOT_SUBSCRIBED"
+	case Interworking5GsIndicatorSubscribed:
+		return "SUBSCRIBED"
+	}
+	return strconv.Itoa(int(v))
+}
+
 // Leaf ::= < AVP Header > { Leaf-Value }
 type Leaf struct {
 	LeafValue uint32 // { } LEAF_VALUE code 50 vendor 99999

@@ -423,6 +423,14 @@ func TestEnumNames(t *testing.T) {
 	if got := Color(7).String(); got != "7" {
 		t.Fatalf("Color(7).String() = %q", got)
 	}
+	// The value prefix is the enum name in SCREAMING_SNAKE however the Go
+	// name came out.
+	if CCRequestTypeInitialRequest != 1 || CCRequestTypeInitialRequest.String() != "INITIAL_REQUEST" {
+		t.Fatalf("CCRequestTypeInitialRequest = %d %q", CCRequestTypeInitialRequest, CCRequestTypeInitialRequest.String())
+	}
+	if Interworking5GsIndicatorSubscribed != 1 || Interworking5GsIndicatorNotSubscribed.String() != "NOT_SUBSCRIBED" {
+		t.Fatalf("Interworking5GsIndicatorSubscribed = %d %q", Interworking5GsIndicatorSubscribed, Interworking5GsIndicatorNotSubscribed.String())
+	}
 	// A value the schema does not know decodes as the raw number.
 	at := sampleAllTypes()
 	at.TEnumerated = Color(42)

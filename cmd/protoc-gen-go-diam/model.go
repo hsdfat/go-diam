@@ -253,18 +253,3 @@ func camel(s string) string {
 	}
 	return b.String()
 }
-
-// snake turns CamelCase into snake_case.
-func snake(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
-				b.WriteByte('_')
-			}
-			r += 'a' - 'A'
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}

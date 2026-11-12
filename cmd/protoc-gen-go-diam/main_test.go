@@ -327,3 +327,19 @@ func TestRejectsMisplacedFieldOptions(t *testing.T) {
 	}))
 	wantError(t, err, "(diam.min) is greater than (diam.max)")
 }
+
+func TestStripEnumPrefix(t *testing.T) {
+	for _, c := range []struct{ enum, value, want string }{
+		{"Color", "COLOR_RED", "RED"},
+		{"CCRequestType", "CC_REQUEST_TYPE_INITIAL_REQUEST", "INITIAL_REQUEST"},
+		{"Interworking5gsIndicator", "INTERWORKING5GS_INDICATOR_SUBSCRIBED", "SUBSCRIBED"},
+		// The shortest match wins, so a value that repeats the name keeps it.
+		{"Drmp", "DRMP_DRMP", "DRMP"},
+		{"Color", "RED", "RED"},
+		{"Color", "COLORED_RED", "COLORED_RED"},
+	} {
+		if got := stripEnumPrefix(c.enum, c.value); got != c.want {
+			t.Errorf("stripEnumPrefix(%q, %q) = %q, want %q", c.enum, c.value, got, c.want)
+		}
+	}
+}
