@@ -22,15 +22,14 @@ ulr := &s6a.UpdateLocationRequest{
 b, err := ulr.Marshal()
 ```
 
-> **Status: pre-release, wave 0.** What is in the repository today: the
-> runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`) and the RFC 6733
-> base protocol (`base`), tested in both directions against
-> fiorix/go-diameter. The S6a examples below show the same API on a 3GPP
-> application; `s6a` is a prototype on the `spike/proto3-codegen` branch and
-> lands in wave 1 (see [Coverage](#coverage)). The API may still change
-> before `v1.0.0`.
+> **Status: pre-release, wave 1 in progress.** What is in the repository
+> today: the runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`), the
+> RFC 6733 base protocol (`base`) and S6a/S6d from TS 29.272 (`s6a`), each
+> tested in both directions against fiorix/go-diameter. No capture from a
+> real peer is committed yet, so both are *spec-only* (see
+> [Coverage](#coverage)). The API may still change before `v1.0.0`.
 
-What works today, with the base protocol:
+The same with the base protocol:
 
 ```go
 import (
@@ -102,7 +101,8 @@ go get github.com/hsdfat/go-diam
 ```
 
 Packages: `github.com/hsdfat/go-diam/diam` (runtime) and one generated
-package per application, today `github.com/hsdfat/go-diam/base`. Generated
+package per application, today `github.com/hsdfat/go-diam/base` and
+`github.com/hsdfat/go-diam/s6a`. Generated
 code is committed in the repository. You only need the generator if you
 [define your own application](#defining-your-own-application).
 
@@ -308,15 +308,15 @@ decoded from them. go-diameter v4.6.0 uses its default dictionary.
 | CER | Encode (reused buffer) | 328 ns/op, 0 B, 0 allocs | 2259 ns/op, 144 B, 16 allocs |
 | STR (13 AVPs, 1 grouped) | Decode | 2435 ns/op, 328 B, 15 allocs | 7573 ns/op, 1520 B, 45 allocs |
 | STR | Encode (reused buffer) | 211 ns/op, 0 B, 0 allocs | 1813 ns/op, 208 B, 15 allocs |
-| S6a ULR (12 AVPs, 2 grouped), prototype | Decode | 510 ns/op, 288 B, 9 allocs | 1774 ns/op, 1376 B, 42 allocs |
-| S6a ULR, prototype | Encode (reused buffer) | 65 ns/op, 0 B, 0 allocs | 520 ns/op, 200 B, 15 allocs |
+| S6a ULR (21 AVPs, 7 grouped, 660 B) | Decode | 6267 ns/op, 1176 B, 28 allocs | 21293 ns/op, 4077 B, 122 allocs |
+| S6a ULR | Encode (reused buffer) | 777 ns/op, 0 B, 0 allocs | 5677 ns/op, 560 B, 30 allocs |
+| S6a ULA with Subscription-Data (2.3 kB) | Decode | 23616 ns/op, 5584 B, 83 allocs | 80436 ns/op, 15598 B, 385 allocs |
+| S6a ULA with Subscription-Data | Encode (reused buffer) | 1669 ns/op, 0 B, 0 allocs | 34550 ns/op, 5928 B, 122 allocs |
 
-CER and STR: Intel i3-12100F, Go 1.26.4, linux/amd64, `-benchtime=200000x`,
-on a shared machine under a CPU quota, which is why they are slower in
-absolute terms than the ULR rows. The ULR rows were measured earlier on the
-same CPU with the prototype on the `spike/proto3-codegen` branch. These are
-measurements of single messages on one machine, not a general claim; compare
-the two columns of a row, not rows with each other. Reproduce with:
+Intel i3-12100F, Go 1.26.4, linux/amd64, `-benchtime=200000x`, on a shared
+machine under a CPU quota. These are measurements of single messages on one
+machine, not a general claim; compare the two columns of a row, not rows
+with each other. Reproduce with:
 
 ```sh
 cd internal/interop && go test -run='^$' -bench=. -benchtime=200000x .
@@ -337,10 +337,10 @@ Statuses:
 | Application | Spec | Wave | Status |
 |---|---|---|---|
 | Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; freeDiameter captures pending (the `peer` workflow produces them) |
-| S6a/S6d | TS 29.272 | 1 | prototype (ULR/ULA) |
+| S6a/S6d (ULR/ULA, AIR/AIA, CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA) | TS 29.272 V18.7.0 | 1 | spec-only: all 16 commands byte-identical with go-diameter in both directions (on the AVPs go-diameter knows), full Subscription-Data, fuzzed; 146 of 314 dictionary entries cross-checked, the 168 go-diameter lacks are listed in `internal/interop/testdata/dictcheck-absent.txt`; no peer capture yet |
 | Cx/Dx | TS 29.229 | 1 | planned |
 | Sh/Dh | TS 29.329 | 1 | planned |
-| S13/S13' | TS 29.272 | 1 | planned |
+| S13/S13' | TS 29.272 | 1 | planned (its AVPs are in the S6a dictionary) |
 | SWx | TS 29.273 | 1 | planned |
 | S6t | TS 29.336 | 1 | planned |
 | S6m/S6c | TS 29.336 / 29.338 | 1 | planned |
@@ -373,10 +373,13 @@ evidence:
 
 1. **Spec transcription.** Every proto file names the spec version and
    clauses it was written from, and carries the spec's ABNF as comments.
-2. **Dictionary cross-check.** CI compares code, vendor, M-bit and type of
-   every AVP with the go-diameter dictionary (freeDiameter's is to follow).
-   A disagreement fails the build until it is fixed or listed with a spec
-   citation in `internal/interop/testdata/dictcheck-allow.txt`.
+2. **Dictionary cross-check.** CI compares name, code, vendor, M-bit and
+   type of every AVP with the go-diameter dictionary (freeDiameter's is to
+   follow). A disagreement fails the build until it is fixed or listed with
+   a spec citation in `internal/interop/testdata/dictcheck-allow.txt`. AVPs
+   go-diameter does not have are listed in
+   `internal/interop/testdata/dictcheck-absent.txt`: for them the
+   transcription is the only evidence.
 3. **Interop.** Each command is built once with go-diameter and once with
    go-diam; the bytes must be identical, and each library must decode and
    re-encode the other's output.

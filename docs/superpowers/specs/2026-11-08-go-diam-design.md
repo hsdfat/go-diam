@@ -461,3 +461,27 @@ The text above is unchanged; these win.
   the root module without the workspace.
 - **Base protocol content.** No E2E-Sequence (RFC 6733 deprecated it) and
   Inband-Security-Id is Unsigned32, as in the RFC.
+
+## 13. Deviations recorded while building wave 1
+
+- **§5.5 / C3, re-used AVPs (S6a).** AVPs that an application re-uses from
+  other specifications are transcribed into that application's own
+  dictionary, not imported from a shared file. TS 29.272 table 7.3.1/2
+  gives many re-used AVPs another M-bit than their defining specification
+  (NOTE 1: it overrides), and `(diam.m)` cannot reach AVPs nested inside a
+  grouped type defined elsewhere. The defining clause is cited per entry.
+- **§5.1, one enum per vendor where codes collide.** The dictionary enum
+  value is the AVP code, so an IETF and a 3GPP AVP with the same code
+  (625, 626) cannot share an enum. A file may hold several dictionary enums
+  (`Avp` and `IetfAvp` in `s6a.proto`).
+- **§5.3, names starting with a digit.** Proto identifiers cannot start
+  with a digit: 3GPP-Charging-Characteristics, 3GPP2-MEID and 5QI are
+  `TGPP_CHARGING_CHARACTERISTICS`, `TGPP2_MEID` and `FIVE_QI`; dictcheck
+  applies the same rule to go-diameter's names.
+- **§8 gate 2, absent entries.** Dictionary entries that go-diameter does
+  not have are listed exactly in
+  `internal/interop/testdata/dictcheck-absent.txt`, so the README can say
+  how much of an interface the cross-check covers.
+- **S6a release.** S6a is transcribed from TS 29.272 V18.7.0 (Release 18,
+  the latest Release 18 version published), not Release 19.
+

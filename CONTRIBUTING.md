@@ -63,14 +63,25 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
 2. **Dictionary.** AVPs go in an enum marked `(diam.dictionary)`. Import the
    base dictionary instead of redefining base AVPs. A per-use M-bit goes on
    the field as `(diam.m)`, with the clause that says so in a comment.
+   An entry is named after the AVP in upper case with `-` and spaces as
+   `_`; a name that starts with a digit is spelt `TGPP...` (3GPP) or
+   `FIVE_QI` (5QI). The enum value is the AVP code, so when an IETF and a
+   vendor AVP share a code, put them in separate dictionary enums (see
+   `IetfAvp` in `proto/3gpp/ts29272/s6a.proto`). AVPs re-used from another
+   specification go in the application's own dictionary with the M-bit the
+   application gives them (3GPP specs override it, e.g. TS 29.272 table
+   7.3.1/2), and the defining clause in a comment.
 3. **Generate** with `make generate` and commit the output.
 4. **Pass the gates.** An application is listed as *verified* only when all
    of these hold:
    1. transcription from the named specification version;
    2. dictionary cross-check (`TestDictionaryAgreesWithGoDiameter`): every
       disagreement is fixed or has a line in
-      `internal/interop/testdata/dictcheck-allow.txt` citing the clause;
-   3. interop with go-diameter in both directions for every command;
+      `internal/interop/testdata/dictcheck-allow.txt` citing the clause, and
+      every entry go-diameter lacks is listed in
+      `internal/interop/testdata/dictcheck-absent.txt`;
+   3. interop with go-diameter in both directions for every command, built
+      on go-diameter's side from its own constants and dictionary;
    4. at least one capture per command pair from an independent peer,
       replayed by `TestCaptures`;
    5. a fuzz target per command, clean for 30 s locally and run in CI;
