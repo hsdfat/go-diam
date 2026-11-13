@@ -510,3 +510,23 @@ The text above is unchanged; these win.
   the value encoding is independent. A test keeps the list exact. No
   benchmark is published for Cx, since go-diameter would decode it as
   opaque AVPs.
+- **Sh release.** Sh/Dh is transcribed from TS 29.329 V18.0.0, the latest
+  Release 18 version, with TS 29.328 V18.2.0 for the procedures and
+  TS 29.329 V8.9.0 as the Release 8 reference. The S6a and Cx rulings apply
+  unchanged: re-used AVPs in the application's own dictionary (`Avp` with
+  External-Identifier from TS 29.336, `IetfAvp` because code 650 is both
+  Load and Session-Priority), `[ Failed-AVP ]` instead of the Release 8
+  `*[ Failed-AVP ]`, Supported-Features with the M-bit in requests only
+  (TS 29.329 §7.1 applies TS 29.229 §7.2.1), and the interop of §8 gate 3
+  built AVP by AVP (`shRestated` in `internal/interop/sh_test.go`), since
+  go-diameter v4.6.0 has no Sh application. No benchmark for Sh either.
+- **§5.2, `*{ X }`.** TS 29.329 writes `*{ Data-Reference }` in UDR, PUR
+  and SNR. RFC 6733 §3.2 makes the default minimum of a required rule one,
+  so it is `repeated` with `(diam.min) = 1`, and a message without
+  Data-Reference fails with 5005.
+- **§7, procedure rules are not grammar (Sh wildcarded identities).**
+  TS 29.328 says a request carries Wildcarded-IMPU or
+  Wildcarded-Public-Identity, not both. The grammar allows both and the
+  rule has no Result-Code of its own, so `Validate` does not enforce it;
+  both AVPs decode into their fields and the application decides. The same
+  holds for User-Identity carrying "either" one identity.

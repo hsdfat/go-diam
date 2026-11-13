@@ -82,8 +82,8 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
       `internal/interop/testdata/dictcheck-absent.txt`;
    3. interop with go-diameter in both directions for every command, built
       on go-diameter's side from its own constants and dictionary. If
-      go-diameter has no dictionary for the application (Cx/Dx), use its
-      definitions of the AVPs from the applications that have them, and
+      go-diameter has no dictionary for the application (Cx/Dx, Sh/Dh), use
+      its definitions of the AVPs from the applications that have them, and
       list the AVPs it defines nowhere with their code and flags restated
       from the specification, as `cxRestated` in
       `internal/interop/cx_test.go` does;
