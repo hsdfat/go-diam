@@ -260,32 +260,35 @@ func serialize(t testing.TB, m *fd.Message) []byte {
 // bytes.
 func TestFiorixToGoDiam(t *testing.T) {
 	for _, p := range allPairs() {
-		t.Run(p.name, func(t *testing.T) {
-			wire := serialize(t, p.fiorix)
-			m, err := diam.Decode(wire)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := m.Validate(); err != nil {
-				t.Fatalf("Validate: %v", err)
-			}
-			out, err := m.AppendMarshal(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(out, wire) {
-				t.Fatalf("go-diam re-encode differs from go-diameter bytes\n%x\n%x", wire, out)
-			}
-			// The hand-built go-diam message of the same content encodes to
-			// the very same bytes: two encoders, one wire format.
-			own, err := p.godiam.AppendMarshal(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(own, wire) {
-				t.Fatalf("go-diam encoding differs from go-diameter's\n%x\n%x", wire, own)
-			}
-		})
+		t.Run(p.name, func(t *testing.T) { checkFiorixToGoDiam(t, p) })
+	}
+}
+
+func checkFiorixToGoDiam(t *testing.T, p pair) {
+	t.Helper()
+	wire := serialize(t, p.fiorix)
+	m, err := diam.Decode(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	out, err := m.AppendMarshal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out, wire) {
+		t.Fatalf("go-diam re-encode differs from go-diameter bytes\n%x\n%x", wire, out)
+	}
+	// The hand-built go-diam message of the same content encodes to the
+	// very same bytes: two encoders, one wire format.
+	own, err := p.godiam.AppendMarshal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(own, wire) {
+		t.Fatalf("go-diam encoding differs from go-diameter's\n%x\n%x", wire, own)
 	}
 }
 
