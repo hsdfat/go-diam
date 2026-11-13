@@ -484,4 +484,29 @@ The text above is unchanged; these win.
   how much of an interface the cross-check covers.
 - **S6a release.** S6a is transcribed from TS 29.272 V18.7.0 (Release 18,
   the latest Release 18 version published), not Release 19.
-
+- **Cx release.** Cx/Dx is transcribed from TS 29.229 V18.1.0, the latest
+  Release 18 version, with TS 29.228 V18.0.0 for the information elements.
+  The S6a rulings apply unchanged: re-used AVPs in the application's own
+  dictionary (`Avp`, `EtsiAvp` for Line-Identifier, `IetfAvp`), and the
+  Release 8 `*[ Failed-AVP ]` is not carried over (Release 14 made it
+  `[ Failed-AVP ]`).
+- **§5.3a, an AVP dropped from a newer grammar (Cx RTR).** TS 29.229
+  V18.1.0 lists no Destination-Host in RTR, while TS 29.229 V8.15.0 has
+  `{ Destination-Host }` and TS 29.228 V18.0.0 table 6.1.3.1 maps it with
+  category M. A Release 8 RTR would otherwise put an M-bit AVP in Unknown
+  and fail with 5001. Such an AVP is kept at its older position as
+  optional, with the reason in the file header. §5.3a covers the opposite
+  case (newly required becomes optional); this is its mirror.
+- **§5.3, per-message M-bit (Cx Supported-Features).** Where the flag table
+  says "May" and the procedure fixes the bit per message (TS 29.229 §7.2.1:
+  set in requests, clear in answers), the dictionary has M clear and every
+  request field sets `(diam.m) = true`.
+- **§8 gate 3, no dictionary on the independent side.** go-diameter v4.6.0
+  has no Cx application. Its side of the Cx interop is built from the Cx
+  AVPs it defines under other applications, and go-diam's output is decoded
+  AVP by AVP in the application that defines each one. The AVPs it defines
+  nowhere are listed in `internal/interop/cx_test.go` (`cxRestated`) with
+  code, vendor and M-bit restated from the specification; for them only
+  the value encoding is independent. A test keeps the list exact. No
+  benchmark is published for Cx, since go-diameter would decode it as
+  opaque AVPs.

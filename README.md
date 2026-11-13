@@ -24,10 +24,11 @@ b, err := ulr.Marshal()
 
 > **Status: pre-release, wave 1 in progress.** What is in the repository
 > today: the runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`), the
-> RFC 6733 base protocol (`base`) and S6a/S6d from TS 29.272 (`s6a`), each
-> tested in both directions against fiorix/go-diameter. No capture from a
-> real peer is committed yet, so both are *spec-only* (see
-> [Coverage](#coverage)). The API may still change before `v1.0.0`.
+> RFC 6733 base protocol (`base`), S6a/S6d from TS 29.272 (`s6a`) and Cx/Dx
+> from TS 29.229 (`cx`), each tested in both directions against
+> fiorix/go-diameter (for Cx, which go-diameter has no dictionary for, AVP
+> by AVP; see [Coverage](#coverage)). No capture from a real peer is
+> committed yet, so all three are *spec-only*. The API may still change before `v1.0.0`.
 
 The same with the base protocol:
 
@@ -101,8 +102,8 @@ go get github.com/hsdfat/go-diam
 ```
 
 Packages: `github.com/hsdfat/go-diam/diam` (runtime) and one generated
-package per application, today `github.com/hsdfat/go-diam/base` and
-`github.com/hsdfat/go-diam/s6a`. Generated
+package per application, today `github.com/hsdfat/go-diam/base`,
+`github.com/hsdfat/go-diam/s6a` and `github.com/hsdfat/go-diam/cx`. Generated
 code is committed in the repository. You only need the generator if you
 [define your own application](#defining-your-own-application).
 
@@ -338,7 +339,7 @@ Statuses:
 |---|---|---|---|
 | Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; freeDiameter captures pending (the `peer` workflow produces them) |
 | S6a/S6d (ULR/ULA, AIR/AIA, CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA) | TS 29.272 V18.7.0 | 1 | spec-only: all 16 commands byte-identical with go-diameter in both directions (on the AVPs go-diameter knows), full Subscription-Data, fuzzed; 146 of 314 dictionary entries cross-checked, the 168 go-diameter lacks are listed in `internal/interop/testdata/dictcheck-absent.txt`; no peer capture yet |
-| Cx/Dx | TS 29.229 | 1 | planned |
+| Cx/Dx (UAR/UAA, SAR/SAA, LIR/LIA, MAR/MAA, RTR/RTA, PPR/PPA) | TS 29.229 V18.1.0 | 1 | spec-only: all 12 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no Cx application: its side is built from the Cx AVPs it defines under SWx, Ro/Rf, Rx, S6a, NASREQ and base, and decodes each AVP in the application that defines it; the 48 AVPs it defines nowhere (Public-Identity, Digest-*, the restoration and P-CSCF AVPs, ...) carry codes and flags restated from the spec in the test. 37 of 85 dictionary entries cross-checked, the 48 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Cx as opaque AVPs, not a like-for-like comparison); no peer capture yet |
 | Sh/Dh | TS 29.329 | 1 | planned |
 | S13/S13' | TS 29.272 | 1 | planned (its AVPs are in the S6a dictionary) |
 | SWx | TS 29.273 | 1 | planned |
@@ -382,7 +383,11 @@ evidence:
    transcription is the only evidence.
 3. **Interop.** Each command is built once with go-diameter and once with
    go-diam; the bytes must be identical, and each library must decode and
-   re-encode the other's output.
+   re-encode the other's output. Where go-diameter has no dictionary for an
+   application (Cx/Dx), it decodes each AVP with its definition from
+   whichever of its applications has one, and the AVPs it defines nowhere
+   are listed in the test with their code and flags restated from the
+   specification.
 4. **Real captures.** Frames received from open-source peers running in CI
    (freeDiameter for the base protocol; Open5GS and PyHSS are planned for
    the 3GPP applications) are committed with their source and replayed: they
