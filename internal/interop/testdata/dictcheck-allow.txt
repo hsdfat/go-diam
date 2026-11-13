@@ -20,3 +20,7 @@
 600 10415 m TS 29.272 table 7.3.1/2: Visited-Network-Identifier "Must not set" in S6a; go-diameter has the TS 29.229 rule (M,V)
 652 0 type RFC 8583 §7.3: Load-Value is Unsigned64; go-diameter has Unsigned32
 1483 10415 name TS 29.272 §7.3.94 names this AVP Service-Type; go-diameter calls it TGPP-Service-Type to keep it apart from RADIUS Service-Type (6)
+#
+# Cx/Dx (proto/3gpp/ts29229/cx.proto, TS 29.229 V18.1.0): no disagreement of
+# its own. Its Load-Value has the same type disagreement as S6a's, covered
+# by the "652 0 type" line above.

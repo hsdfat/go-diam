@@ -1,0 +1,1183 @@
+// Cx/Dx: I-CSCF/S-CSCF - HSS/SLF (Diameter application 16777216).
+//
+// Source: 3GPP TS 29.229 V18.1.0 (Release 18), published as
+// ETSI TS 129 229 V18.1.0 (2024-10); the latest Release 18 version.
+//   Commands:      §6.1 table 6.1.1, §6.1.1-6.1.12 (UAR/UAA, SAR/SAA,
+//                  LIR/LIA, MAR/MAA, RTR/RTA, PPR/PPA)
+//   AVP table:     §6.3.0 table 6.3.0.1, all rows, and Line-Identifier
+//                  (§6.3.42, not in the table)
+//   Grouped AVPs:  §6.3.4, 6.3.13, 6.3.16, 6.3.19, 6.3.29, 6.3.32, 6.3.33,
+//                  6.3.36, 6.3.46, 6.3.49, 6.3.50, 6.3.52, 6.3.57, 6.3.64,
+//                  6.3.70, 6.3.74
+//   Enumerations:  the clause of each Enumerated AVP in §6.3
+// Procedures and information elements: 3GPP TS 29.228 V18.0.0
+// (ETSI TS 129 228 V18.0.0, 2024-05), §6.
+//
+// AVPs that TS 29.229 re-uses are in this file's dictionaries too, with the
+// flag rules table 6.3.0.1 gives them (it lists the IETF ones it re-uses):
+//   RFC 4740 / RFC 4590                Digest-Realm, Digest-Algorithm,
+//                                      Digest-QoP, Digest-HA1 (codes and
+//                                      flags from table 6.3.0.1)
+//   RFC 7155 §4.4.10.5.1, .5.5, .5.6   Framed-IP-Address, Framed-Interface-Id,
+//                                      Framed-IPv6-Prefix (TS 29.229 cites
+//                                      RFC 4005, which RFC 7155 obsoletes)
+//   RFC 7683 §7.1-7.7                  OC-Supported-Features, OC-OLR and
+//                                      their AVPs
+//   RFC 7944 §9.1                      DRMP
+//   RFC 8583 §7.1-7.4                  Load and its AVPs
+// Base protocol AVPs come from ietf/rfc6733/base.proto.
+//
+// Release compatibility (design §5.3a): every AVP that is required here is
+// also required in TS 29.229 V8.15.0 (Release 8), and the Release 8
+// grouped AVPs have the same required members. One exception goes the other
+// way, see Destination-Host in RTR below. Release 8 answers carry
+// *[ Failed-AVP ]; Release 14 (CR 0286) made it [ Failed-AVP ], which is used
+// here, as in S6a.
+//
+// Rulings where the specification text disagrees with itself:
+//   - RTR Destination-Host: the V18.1.0 RTR grammar (§6.1.9) has no
+//     Destination-Host, but TS 29.228 V18.0.0 table 6.1.3.1 maps "Routing
+//     Information" to Destination-Host with category M, and TS 29.229
+//     V8.15.0 has { Destination-Host } between Origin-Realm and
+//     Destination-Realm. It is kept there as [ Destination-Host ], so that
+//     an RTR from either reading passes Validate; a sender should set it.
+//   - RTR "RTR-Flags ]" is read as [ RTR-Flags ]; RTA lists < Session-Id >
+//     twice, read as once.
+//   - Supported-Features M-bit: table 6.3.0.1 says "May"; §7.2.1 says it is
+//     set in requests and clear in answers. The dictionary has it clear and
+//     every request sets (diam.m) = true.
+//   - Line-Identifier (§6.3.42): vendor ETSI (13019), code 500,
+//     OctetString, no flag rule in TS 29.229; sent with the M-bit clear, as
+//     S6a does for AVPs without a flag rule.
+//   - Load (table 6.3.0.1 "NOTE 6" for the code) is RFC 8583's AVP 650.
+//   - Wildcarded-IMPU (§6.3.43) is not in table 6.3.0.1 and has no code in
+//     TS 29.229; it is used on Sh only and is left to the Sh schema.
+//   - Supported-Applications (§6.3.32) is used only by the error answer of
+//     §7.3.1, not by the Cx commands; its grouped type is here so that an
+//     application can decode it from Unknown.
+//   - Spellings kept as written: Priviledged-Sender-Indication,
+//     PRIORITY-0..4 (Session-Priority), REMOVE_S-CSCF (Reason-Code).
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.cx;
+
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/cx";
+
+// Avp is the Cx/Dx dictionary of 3GPP AVPs (vendor 10415): table 6.3.0.1.
+// The M-bit is set where the flag rules say "Must"; "May" is left clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  VISITED_NETWORK_IDENTIFIER = 600 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  PUBLIC_IDENTITY = 601 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  SERVER_NAME = 602 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  SERVER_CAPABILITIES = 603 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MANDATORY_CAPABILITY = 604 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  OPTIONAL_CAPABILITY = 605 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  USER_DATA = 606 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SIP_NUMBER_AUTH_ITEMS = 607 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SIP_AUTHENTICATION_SCHEME = 608 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  SIP_AUTHENTICATE = 609 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SIP_AUTHORIZATION = 610 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SIP_AUTHENTICATION_CONTEXT = 611 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SIP_AUTH_DATA_ITEM = 612 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SIP_ITEM_NUMBER = 613 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SERVER_ASSIGNMENT_TYPE = 614 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  DEREGISTRATION_REASON = 615 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  REASON_CODE = 616 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  REASON_INFO = 617 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  CHARGING_INFORMATION = 618 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  PRIMARY_EVENT_CHARGING_FUNCTION_NAME = 619 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_URI}];
+  SECONDARY_EVENT_CHARGING_FUNCTION_NAME = 620 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_URI}];
+  PRIMARY_CHARGING_COLLECTION_FUNCTION_NAME = 621 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_URI}];
+  SECONDARY_CHARGING_COLLECTION_FUNCTION_NAME = 622 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_URI}];
+  USER_AUTHORIZATION_TYPE = 623 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  USER_DATA_ALREADY_AVAILABLE = 624 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  CONFIDENTIALITY_KEY = 625 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  INTEGRITY_KEY = 626 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // table 6.3.0.1: M "May"; §7.2.1 sets it per message (see the requests)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SUPPORTED_APPLICATIONS = 631 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ASSOCIATED_IDENTITIES = 632 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ORIGINATING_REQUEST = 633 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  WILDCARDED_PUBLIC_IDENTITY = 634 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  SIP_DIGEST_AUTHENTICATE = 635 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  UAR_FLAGS = 637 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  LOOSE_ROUTE_INDICATION = 638 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SCSCF_RESTORATION_INFO = 639 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PATH = 640 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  CONTACT = 641 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SUBSCRIPTION_INFO = 642 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  CALL_ID_SIP_HEADER = 643 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  FROM_SIP_HEADER = 644 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  TO_SIP_HEADER = 645 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  RECORD_ROUTE = 646 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  ASSOCIATED_REGISTERED_IDENTITIES = 647 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MULTIPLE_REGISTRATION_INDICATION = 648 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  RESTORATION_INFO = 649 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SESSION_PRIORITY = 650 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  IDENTITY_WITH_EMERGENCY_REGISTRATION = 651 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PRIVILEDGED_SENDER_INDICATION = 652 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  LIA_FLAGS = 653 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  INITIAL_CSEQ_SEQUENCE_NUMBER = 654 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SAR_FLAGS = 655 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  ALLOWED_WAF_WWSF_IDENTITIES = 656 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  WEBRTC_AUTHENTICATION_FUNCTION_NAME = 657 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  WEBRTC_WEB_SERVER_FUNCTION_NAME = 658 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  RTR_FLAGS = 659 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  P_CSCF_SUBSCRIPTION_INFO = 660 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  REGISTRATION_TIME_OUT = 661 [(diam.def) = {vendor: 10415, type: TIME}];
+  ALTERNATE_DIGEST_ALGORITHM = 662 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  ALTERNATE_DIGEST_HA1 = 663 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  FAILED_PCSCF = 664 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PCSCF_FQDN = 665 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  PCSCF_IP_ADDRESS = 666 [(diam.def) = {vendor: 10415, type: ADDRESS}];
+}
+
+// EtsiAvp holds the ETSI AVP (vendor 13019) that TS 29.229 re-uses.
+enum EtsiAvp {
+  option (diam.dictionary) = true;
+  ETSI_AVP_UNSPECIFIED = 0;
+  // §6.3.42: vendor 13019, code 500, OctetString; no flag rule given, M left clear
+  LINE_IDENTIFIER = 500 [(diam.def) = {vendor: 13019, type: OCTET_STRING}];
+}
+
+// IetfAvp holds the re-used IETF AVPs (no Vendor-Id). They are a separate
+// dictionary because an enum value number is the AVP code, and codes 621,
+// 622, 623, 625, 626, 649, 650, 651 and 652 are both an IETF and a 3GPP AVP.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 7155 §4.4.10.5.1 and its flag table
+  FRAMED_IP_ADDRESS = 8 [(diam.def) = {m: true, type: OCTET_STRING}];
+  // RFC 7155 §4.4.10.5.5 and its flag table
+  FRAMED_INTERFACE_ID = 96 [(diam.def) = {m: true, type: UNSIGNED64}];
+  // RFC 7155 §4.4.10.5.6 and its flag table
+  FRAMED_IPV6_PREFIX = 97 [(diam.def) = {m: true, type: OCTET_STRING}];
+  // RFC 4590 / RFC 4740; table 6.3.0.1: Must M, Must not V
+  DIGEST_REALM = 104 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 4590 / RFC 4740; table 6.3.0.1: Must M, Must not V
+  DIGEST_QOP = 110 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 4590 / RFC 4740; table 6.3.0.1: Must M, Must not V
+  DIGEST_ALGORITHM = 111 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 4590 / RFC 4740; table 6.3.0.1: Must M, Must not V
+  DIGEST_HA1 = 121 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 7944 §9.1; table 6.3.0.1: Must not M, V
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.1; table 6.3.0.1: Must not M, V
+  OC_SUPPORTED_FEATURES = 621 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.2
+  OC_FEATURE_VECTOR = 622 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.3; table 6.3.0.1: Must not M, V
+  OC_OLR = 623 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.4
+  OC_SEQUENCE_NUMBER = 624 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.5
+  OC_VALIDITY_DURATION = 625 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.6
+  OC_REPORT_TYPE = 626 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.7
+  OC_REDUCTION_PERCENTAGE = 627 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 8583 §7.4
+  SOURCEID = 649 [(diam.def) = {type: DIAMETER_IDENTITY}];
+  // RFC 8583 §7.1; table 6.3.0.1: Must not M, V
+  LOAD = 650 [(diam.def) = {type: GROUPED}];
+  // RFC 8583 §7.2
+  LOAD_TYPE = 651 [(diam.def) = {type: ENUMERATED}];
+  // RFC 8583 §7.3
+  LOAD_VALUE = 652 [(diam.def) = {type: UNSIGNED64}];
+}
+
+// Server-Assignment-Type (§6.3.15). Values 12-14 are used on SWx only.
+enum ServerAssignmentType {
+  SERVER_ASSIGNMENT_TYPE_NO_ASSIGNMENT = 0;
+  SERVER_ASSIGNMENT_TYPE_REGISTRATION = 1;
+  SERVER_ASSIGNMENT_TYPE_RE_REGISTRATION = 2;
+  SERVER_ASSIGNMENT_TYPE_UNREGISTERED_USER = 3;
+  SERVER_ASSIGNMENT_TYPE_TIMEOUT_DEREGISTRATION = 4;
+  SERVER_ASSIGNMENT_TYPE_USER_DEREGISTRATION = 5;
+  SERVER_ASSIGNMENT_TYPE_TIMEOUT_DEREGISTRATION_STORE_SERVER_NAME = 6;
+  SERVER_ASSIGNMENT_TYPE_USER_DEREGISTRATION_STORE_SERVER_NAME = 7;
+  SERVER_ASSIGNMENT_TYPE_ADMINISTRATIVE_DEREGISTRATION = 8;
+  SERVER_ASSIGNMENT_TYPE_AUTHENTICATION_FAILURE = 9;
+  SERVER_ASSIGNMENT_TYPE_AUTHENTICATION_TIMEOUT = 10;
+  SERVER_ASSIGNMENT_TYPE_DEREGISTRATION_TOO_MUCH_DATA = 11;
+  SERVER_ASSIGNMENT_TYPE_AAA_USER_DATA_REQUEST = 12;
+  SERVER_ASSIGNMENT_TYPE_PGW_UPDATE = 13;
+  SERVER_ASSIGNMENT_TYPE_RESTORATION = 14;
+}
+
+// Reason-Code (§6.3.17). REMOVE_S-CSCF is spelt REMOVE_S_CSCF.
+enum ReasonCode {
+  REASON_CODE_PERMANENT_TERMINATION = 0;
+  REASON_CODE_NEW_SERVER_ASSIGNED = 1;
+  REASON_CODE_SERVER_CHANGE = 2;
+  REASON_CODE_REMOVE_S_CSCF = 3;
+}
+
+// User-Authorization-Type (§6.3.24).
+enum UserAuthorizationType {
+  USER_AUTHORIZATION_TYPE_REGISTRATION = 0;
+  USER_AUTHORIZATION_TYPE_DE_REGISTRATION = 1;
+  USER_AUTHORIZATION_TYPE_REGISTRATION_AND_CAPABILITIES = 2;
+}
+
+// User-Data-Already-Available (§6.3.26).
+enum UserDataAlreadyAvailable {
+  USER_DATA_ALREADY_AVAILABLE_USER_DATA_NOT_AVAILABLE = 0;
+  USER_DATA_ALREADY_AVAILABLE_USER_DATA_ALREADY_AVAILABLE = 1;
+}
+
+// Originating-Request (§6.3.34).
+enum OriginatingRequest {
+  ORIGINATING_REQUEST_ORIGINATING = 0;
+}
+
+// Loose-Route-Indication (§6.3.45).
+enum LooseRouteIndication {
+  LOOSE_ROUTE_INDICATION_LOOSE_ROUTE_NOT_REQUIRED = 0;
+  LOOSE_ROUTE_INDICATION_LOOSE_ROUTE_REQUIRED = 1;
+}
+
+// Multiple-Registration-Indication (§6.3.51).
+enum MultipleRegistrationIndication {
+  MULTIPLE_REGISTRATION_INDICATION_NOT_MULTIPLE_REGISTRATION = 0;
+  MULTIPLE_REGISTRATION_INDICATION_MULTIPLE_REGISTRATION = 1;
+}
+
+// Session-Priority (§6.3.56). PRIORITY-0 is the highest priority.
+enum SessionPriority {
+  SESSION_PRIORITY_PRIORITY_0 = 0;
+  SESSION_PRIORITY_PRIORITY_1 = 1;
+  SESSION_PRIORITY_PRIORITY_2 = 2;
+  SESSION_PRIORITY_PRIORITY_3 = 3;
+  SESSION_PRIORITY_PRIORITY_4 = 4;
+}
+
+// Priviledged-Sender-Indication (§6.3.58), spelt as in the specification.
+enum PriviledgedSenderIndication {
+  PRIVILEDGED_SENDER_INDICATION_NOT_PRIVILEDGED_SENDER = 0;
+  PRIVILEDGED_SENDER_INDICATION_PRIVILEDGED_SENDER = 1;
+}
+
+// DRMP (RFC 7944 §9.1).
+enum Drmp {
+  DRMP_PRIORITY_0 = 0;
+  DRMP_PRIORITY_1 = 1;
+  DRMP_PRIORITY_2 = 2;
+  DRMP_PRIORITY_3 = 3;
+  DRMP_PRIORITY_4 = 4;
+  DRMP_PRIORITY_5 = 5;
+  DRMP_PRIORITY_6 = 6;
+  DRMP_PRIORITY_7 = 7;
+  DRMP_PRIORITY_8 = 8;
+  DRMP_PRIORITY_9 = 9;
+  DRMP_PRIORITY_10 = 10;
+  DRMP_PRIORITY_11 = 11;
+  DRMP_PRIORITY_12 = 12;
+  DRMP_PRIORITY_13 = 13;
+  DRMP_PRIORITY_14 = 14;
+  DRMP_PRIORITY_15 = 15;
+}
+
+// OC-Report-Type (RFC 7683 §7.6).
+enum OcReportType {
+  OC_REPORT_TYPE_HOST_REPORT = 0;
+  OC_REPORT_TYPE_REALM_REPORT = 1;
+}
+
+// Load-Type (RFC 8583 §7.2).
+enum LoadType {
+  LOAD_TYPE_HOST = 0;
+  LOAD_TYPE_PEER = 1;
+}
+
+// OC-Supported-Features (RFC 7683 §7.1)
+//
+// OC-Supported-Features ::= < AVP Header: 621 >
+//   [ OC-Feature-Vector ]
+//   *[ AVP ]
+message OcSupportedFeatures {
+  option (diam.extensible) = true;
+  optional uint64 oc_feature_vector = 1;
+}
+
+// OC-OLR (RFC 7683 §7.3)
+//
+// OC-OLR ::= < AVP Header: 623 >
+//   < OC-Sequence-Number >
+//   < OC-Report-Type >
+//   [ OC-Reduction-Percentage ]
+//   [ OC-Validity-Duration ]
+//   *[ AVP ]
+message OcOlr {
+  option (diam.extensible) = true;
+  uint64 oc_sequence_number = 1 [(diam.fixed) = true];
+  OcReportType oc_report_type = 2 [(diam.fixed) = true];
+  optional uint32 oc_reduction_percentage = 3;
+  optional uint32 oc_validity_duration = 4;
+}
+
+// Load (RFC 8583 §7.1)
+//
+// Load ::= < AVP Header: 650 >
+//   [ Load-Type ]
+//   [ Load-Value ]
+//   [ SourceID ]
+//   *[ AVP ]
+message Load {
+  option (diam.extensible) = true;
+  optional LoadType load_type = 1;
+  optional uint64 load_value = 2;
+  optional string sourceid = 3;
+}
+
+// Server-Capabilities (§6.3.4)
+//
+// Server-Capabilities ::= <AVP header: 603 10415>
+//   *[Mandatory-Capability]
+//   *[Optional-Capability]
+//   *[Server-Name]
+//   *[AVP]
+message ServerCapabilities {
+  option (diam.extensible) = true;
+  repeated uint32 mandatory_capability = 1;
+  repeated uint32 optional_capability = 2;
+  repeated string server_name = 3;
+}
+
+// SIP-Auth-Data-Item (§6.3.13)
+//
+// SIP-Auth-Data-Item :: = < AVP Header : 612 10415 >
+//   [ SIP-Item-Number ]
+//   [ SIP-Authentication-Scheme ]
+//   [ SIP-Authenticate ]
+//   [ SIP-Authorization ]
+//   [ SIP-Authentication-Context ]
+//   [ Confidentiality-Key ]
+//   [ Integrity-Key ]
+//   [ SIP-Digest-Authenticate ]
+//   [ Framed-IP-Address ]
+//   [ Framed-IPv6-Prefix ]
+//   [ Framed-Interface-Id ]
+//   * [ Line-Identifier ]
+//   * [AVP]
+message SipAuthDataItem {
+  option (diam.extensible) = true;
+  optional uint32 sip_item_number = 1;
+  optional string sip_authentication_scheme = 2;
+  optional bytes sip_authenticate = 3;
+  optional bytes sip_authorization = 4;
+  optional bytes sip_authentication_context = 5;
+  optional bytes confidentiality_key = 6;
+  optional bytes integrity_key = 7;
+  optional SipDigestAuthenticate sip_digest_authenticate = 8;
+  optional bytes framed_ip_address = 9;
+  optional bytes framed_ipv6_prefix = 10;
+  optional uint64 framed_interface_id = 11;
+  repeated bytes line_identifier = 12;
+}
+
+// Deregistration-Reason (§6.3.16)
+//
+// Deregistration-Reason :: = < AVP Header : 615 10415 >
+//   { Reason-Code }
+//   [ Reason-Info ]
+//   * [AVP]
+message DeregistrationReason {
+  option (diam.extensible) = true;
+  ReasonCode reason_code = 1;
+  optional string reason_info = 2;
+}
+
+// Charging-Information (§6.3.19)
+//
+// Charging-Information :: = < AVP Header : 618 10415 >
+//   [ Primary-Event-Charging-Function-Name ]
+//   [ Secondary-Event-Charging-Function-Name ]
+//   [ Primary-Charging-Collection-Function-Name ]
+//   [ Secondary-Charging-Collection-Function-Name ]
+//   *[ AVP]
+message ChargingInformation {
+  option (diam.extensible) = true;
+  optional string primary_event_charging_function_name = 1;
+  optional string secondary_event_charging_function_name = 2;
+  optional string primary_charging_collection_function_name = 3;
+  optional string secondary_charging_collection_function_name = 4;
+}
+
+// Supported-Features (§6.3.29)
+//
+// Supported-Features ::= < AVP header: 628 10415 >
+//   { Vendor-Id }
+//   { Feature-List-ID }
+//   { Feature-List }
+//   *[AVP]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// Supported-Applications (§6.3.32)
+//
+// Supported-Applications ::= < AVP header: 631 10415 >
+//   *[ Auth-Application-Id ]
+//   *[ Acct-Application-Id ]
+//   *[ Vendor-Specific-Application-Id ]
+//   *[ AVP ]
+message SupportedApplications {
+  option (diam.extensible) = true;
+  repeated uint32 auth_application_id = 1;
+  repeated uint32 acct_application_id = 2;
+  repeated godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+}
+
+// Associated-Identities (§6.3.33)
+//
+// Associated-Identities ::= < AVP header: 632, 10415 >
+//   *[ User-Name ]
+//   *[ AVP ]
+message AssociatedIdentities {
+  option (diam.extensible) = true;
+  repeated string user_name = 1;
+}
+
+// SIP-Digest-Authenticate (§6.3.36)
+//
+// SIP-Digest-Authenticate ::= < AVP Header: 635 10415>
+//   { Digest-Realm }
+//   [ Digest-Algorithm ]
+//   { Digest-QoP }
+//   { Digest-HA1}
+//   [ Alternate-Digest-Algorithm ]
+//   [ Alternate-Digest-HA1 ]
+//   *[ AVP ]
+message SipDigestAuthenticate {
+  option (diam.extensible) = true;
+  string digest_realm = 1;
+  optional string digest_algorithm = 2;
+  string digest_qop = 3;
+  string digest_ha1 = 4;
+  optional string alternate_digest_algorithm = 5;
+  optional string alternate_digest_ha1 = 6;
+}
+
+// SCSCF-Restoration-Info (§6.3.46)
+//
+// SCSCF-Restoration-Info ::= < AVP Header: 639, 10415>
+//   { User-Name }
+//   1*{ Restoration-Info }
+//   [ Registration-Time-Out ]
+//   [ SIP-Authentication-Scheme ]
+//   *[ AVP ]
+message ScscfRestorationInfo {
+  option (diam.extensible) = true;
+  string user_name = 1;
+  repeated RestorationInfo restoration_info = 2 [(diam.min) = 1];
+  optional uint32 registration_time_out = 3;
+  optional string sip_authentication_scheme = 4;
+}
+
+// Subscription-Info (§6.3.49)
+//
+// Subscription-Info ::= < AVP Header: 642, 10415>
+//   { Call-ID-SIP-Header }
+//   { From-SIP-Header }
+//   { To-SIP-Header }
+//   { Record-Route }
+//   {Contact}
+//   *[ AVP ]
+message SubscriptionInfo {
+  option (diam.extensible) = true;
+  bytes call_id_sip_header = 1;
+  bytes from_sip_header = 2;
+  bytes to_sip_header = 3;
+  bytes record_route = 4;
+  bytes contact = 5;
+}
+
+// Associated-Registered-Identities (§6.3.50)
+//
+// Associated-Registered-Identities ::= < AVP header: 647, 10415 >
+//   *[ User-Name ]
+//   *[ AVP ]
+message AssociatedRegisteredIdentities {
+  option (diam.extensible) = true;
+  repeated string user_name = 1;
+}
+
+// Restoration-Info (§6.3.52)
+//
+// Restoration-Info ::= < AVP Header: 649, 10415>
+//   { Path }
+//   { Contact }
+//   [ Initial-CSeq-Sequence-Number ]
+//   [ Call-ID-SIP-Header ]
+//   [ Subscription-Info ]
+//   [ P-CSCF-Subscription-Info ]
+//   *[ AVP ]
+message RestorationInfo {
+  option (diam.extensible) = true;
+  bytes path = 1;
+  bytes contact = 2;
+  optional uint32 initial_cseq_sequence_number = 3;
+  optional bytes call_id_sip_header = 4;
+  optional SubscriptionInfo subscription_info = 5;
+  optional PCscfSubscriptionInfo p_cscf_subscription_info = 6;
+}
+
+// Identity-with-Emergency-Registration (§6.3.57)
+//
+// Identity-with-Emergency-Registration ::= < AVP header: 651, 10415 >
+//   { User-Name }
+//   { Public-Identity }
+//   *[ AVP ]
+message IdentityWithEmergencyRegistration {
+  option (diam.extensible) = true;
+  string user_name = 1;
+  string public_identity = 2;
+}
+
+// Allowed-WAF-WWSF-Identities (§6.3.64)
+//
+// Allowed-WAF-WWSF-Identities :: = < AVP Header : 656 10415 >
+//   *[ WebRTC-Authentication-Function-Name ]
+//   *[ WebRTC-Web-Server-Function-Name ]
+//   *[ AVP]
+message AllowedWafWwsfIdentities {
+  option (diam.extensible) = true;
+  repeated string webrtc_authentication_function_name = 1;
+  repeated string webrtc_web_server_function_name = 2;
+}
+
+// P-CSCF-Subscription-Info (§6.3.70)
+//
+// P-CSCF-Subscription-Info ::= < AVP Header: 660, 10415>
+//   { Call-ID-SIP-Header }
+//   { From-SIP-Header }
+//   { To-SIP-Header }
+//   { Contact }
+//   *[ AVP ]
+message PCscfSubscriptionInfo {
+  option (diam.extensible) = true;
+  bytes call_id_sip_header = 1;
+  bytes from_sip_header = 2;
+  bytes to_sip_header = 3;
+  bytes contact = 4;
+}
+
+// Failed-PCSCF (§6.3.74)
+//
+// Failed-PCSCF ::= < AVP Header: 664, 10415>
+//   [ PCSCF-FQDN ]
+//   *[ PCSCF-IP-Address ]
+//   *[ AVP ]
+message FailedPcscf {
+  option (diam.extensible) = true;
+  optional string pcscf_fqdn = 1;
+  repeated bytes pcscf_ip_address = 2;
+}
+
+// User-Authorization-Request (6.1.1)
+//
+// < User-Authorization-Request> ::= < Diameter Header: 300, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   { Public-Identity }
+//   { Visited-Network-Identifier }
+//   [ User-Authorization-Type ]
+//   [ UAR-Flags ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message UserAuthorizationRequest {
+  option (diam.command) = {
+    code: 300
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  string public_identity = 12;
+  bytes visited_network_identifier = 13;
+  optional UserAuthorizationType user_authorization_type = 14;
+  optional uint32 uar_flags = 15;
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// User-Authorization-Answer (6.1.2)
+//
+// < User-Authorization-Answer> ::= < Diameter Header: 300, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ Server-Name ]
+//   [ Server-Capabilities ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message UserAuthorizationAnswer {
+  option (diam.command) = {
+    code: 300
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional string server_name = 13;
+  optional ServerCapabilities server_capabilities = 14;
+  optional godiam.base.FailedAvp failed_avp = 15;
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// Server-Assignment-Request (6.1.3)
+//
+// <Server-Assignment-Request> ::= < Diameter Header: 301, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   [ User-Name ]
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   *[ Public-Identity ]
+//   [ Wildcarded-Public-Identity ]
+//   { Server-Name }
+//   { Server-Assignment-Type }
+//   { User-Data-Already-Available }
+//   [ SCSCF-Restoration-Info ]
+//   [ Multiple-Registration-Indication ]
+//   [ Session-Priority ]
+//   [ SAR-Flags ]
+//   [ Failed-PCSCF ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ServerAssignmentRequest {
+  option (diam.command) = {
+    code: 301
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  optional string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  repeated string public_identity = 12;
+  optional string wildcarded_public_identity = 13;
+  string server_name = 14;
+  ServerAssignmentType server_assignment_type = 15;
+  UserDataAlreadyAvailable user_data_already_available = 16;
+  optional ScscfRestorationInfo scscf_restoration_info = 17;
+  optional MultipleRegistrationIndication multiple_registration_indication = 18;
+  optional SessionPriority session_priority = 19;
+  optional uint32 sar_flags = 20;
+  optional FailedPcscf failed_pcscf = 21;
+  repeated godiam.base.ProxyInfo proxy_info = 22;
+  repeated string route_record = 23;
+}
+
+// Server-Assignment-Answer (6.1.4)
+//
+// <Server-Assignment-Answer> ::= < Diameter Header: 301, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ User-Name ]
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ User-Data ]
+//   [ Charging-Information ]
+//   [ Associated-Identities ]
+//   [ Loose-Route-Indication ]
+//   *[ SCSCF-Restoration-Info ]
+//   [ Associated-Registered-Identities ]
+//   [ Server-Name ]
+//   [ Wildcarded-Public-Identity ]
+//   [ Priviledged-Sender-Indication ]
+//   [ Allowed-WAF-WWSF-Identities ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ServerAssignmentAnswer {
+  option (diam.command) = {
+    code: 301
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional OcOlr oc_olr = 11;
+  repeated Load load = 12;
+  repeated SupportedFeatures supported_features = 13;
+  optional bytes user_data = 14;
+  optional ChargingInformation charging_information = 15;
+  optional AssociatedIdentities associated_identities = 16;
+  optional LooseRouteIndication loose_route_indication = 17;
+  repeated ScscfRestorationInfo scscf_restoration_info = 18;
+  optional AssociatedRegisteredIdentities associated_registered_identities = 19;
+  optional string server_name = 20;
+  optional string wildcarded_public_identity = 21;
+  optional PriviledgedSenderIndication priviledged_sender_indication = 22;
+  optional AllowedWafWwsfIdentities allowed_waf_wwsf_identities = 23;
+  optional godiam.base.FailedAvp failed_avp = 24;
+  repeated godiam.base.ProxyInfo proxy_info = 25;
+  repeated string route_record = 26;
+}
+
+// Location-Info-Request (6.1.5)
+//
+// <Location-Info-Request> ::= < Diameter Header: 302, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   [ Originating-Request ]
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   { Public-Identity }
+//   [ User-Authorization-Type ]
+//   [ Session-Priority ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message LocationInfoRequest {
+  option (diam.command) = {
+    code: 302
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  optional OriginatingRequest originating_request = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  string public_identity = 12;
+  optional UserAuthorizationType user_authorization_type = 13;
+  optional SessionPriority session_priority = 14;
+  repeated godiam.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// Location-Info-Answer (6.1.6)
+//
+// <Location-Info-Answer> ::= < Diameter Header: 302, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ Server-Name ]
+//   [ Server-Capabilities ]
+//   [ Wildcarded-Public-Identity ]
+//   [ LIA-Flags ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message LocationInfoAnswer {
+  option (diam.command) = {
+    code: 302
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional string server_name = 13;
+  optional ServerCapabilities server_capabilities = 14;
+  optional string wildcarded_public_identity = 15;
+  optional uint32 lia_flags = 16;
+  optional godiam.base.FailedAvp failed_avp = 17;
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+}
+
+// Multimedia-Auth-Request (6.1.7)
+//
+// < Multimedia-Auth-Request > ::= < Diameter Header: 303, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Realm }
+//   [ Destination-Host ]
+//   { User-Name }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   { Public-Identity }
+//   { SIP-Auth-Data-Item }
+//   { SIP-Number-Auth-Items }
+//   { Server-Name }
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MultimediaAuthRequest {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_realm = 7;
+  optional string destination_host = 8;
+  string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  string public_identity = 12;
+  SipAuthDataItem sip_auth_data_item = 13;
+  uint32 sip_number_auth_items = 14;
+  string server_name = 15;
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// Multimedia-Auth-Answer (6.1.8)
+//
+// < Multimedia-Auth-Answer > ::= < Diameter Header: 303, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ User-Name ]
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ Public-Identity ]
+//   [ SIP-Number-Auth-Items ]
+//   *[SIP-Auth-Data-Item ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MultimediaAuthAnswer {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional string user_name = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  optional OcOlr oc_olr = 11;
+  repeated Load load = 12;
+  repeated SupportedFeatures supported_features = 13;
+  optional string public_identity = 14;
+  optional uint32 sip_number_auth_items = 15;
+  repeated SipAuthDataItem sip_auth_data_item = 16;
+  optional godiam.base.FailedAvp failed_avp = 17;
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+}
+
+// Registration-Termination-Request (6.1.9)
+//
+// <Registration-Termination-Request> ::= < Diameter Header: 304, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Realm }
+//   { User-Name }
+//   [ Associated-Identities ]
+//   *[ Supported-Features ]
+//   *[ Public-Identity ]
+//   { Deregistration-Reason }
+//   RTR-Flags ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//
+// [ Destination-Host ] is added after Origin-Realm: TS 29.228 V18.0.0 table
+// 6.1.3.1 and TS 29.229 V8.15.0 have it (see the file header).
+message RegistrationTerminationRequest {
+  option (diam.command) = {
+    code: 304
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional AssociatedIdentities associated_identities = 10;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  repeated string public_identity = 12;
+  DeregistrationReason deregistration_reason = 13;
+  optional uint32 rtr_flags = 14;
+  repeated godiam.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// Registration-Termination-Answer (6.1.10)
+//
+// <Registration-Termination-Answer> ::= < Diameter Header: 304, PXY, 16777216 >
+//   < Session-Id >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Associated-Identities ]
+//   *[ Supported-Features ]
+//   *[ Identity-with-Emergency-Registration ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message RegistrationTerminationAnswer {
+  option (diam.command) = {
+    code: 304
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional AssociatedIdentities associated_identities = 9;
+  repeated SupportedFeatures supported_features = 10;
+  repeated IdentityWithEmergencyRegistration identity_with_emergency_registration = 11;
+  optional godiam.base.FailedAvp failed_avp = 12;
+  repeated godiam.base.ProxyInfo proxy_info = 13;
+  repeated string route_record = 14;
+}
+
+// Push-Profile-Request (6.1.11)
+//
+// < Push-Profile-Request > ::= < Diameter Header: 305, REQ, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   *[ Supported-Features ]
+//   [ User-Data ]
+//   [ Charging-Information ]
+//   [ SIP-Auth-Data-Item ]
+//   [ Allowed-WAF-WWSF-Identities ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message PushProfileRequest {
+  option (diam.command) = {
+    code: 305
+    app_id: 16777216
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  // §7.2.1: M-bit set in a request
+  repeated SupportedFeatures supported_features = 10 [(diam.m) = true];
+  optional bytes user_data = 11;
+  optional ChargingInformation charging_information = 12;
+  optional SipAuthDataItem sip_auth_data_item = 13;
+  optional AllowedWafWwsfIdentities allowed_waf_wwsf_identities = 14;
+  repeated godiam.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// Push-Profile-Answer (6.1.12)
+//
+// < Push-Profile-Answer > ::= < Diameter Header: 305, PXY, 16777216 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message PushProfileAnswer {
+  option (diam.command) = {
+    code: 305
+    app_id: 16777216
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  repeated SupportedFeatures supported_features = 9;
+  optional godiam.base.FailedAvp failed_avp = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
