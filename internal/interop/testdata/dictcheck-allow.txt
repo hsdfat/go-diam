@@ -24,3 +24,6 @@
 # Cx/Dx (proto/3gpp/ts29229/cx.proto, TS 29.229 V18.1.0): no disagreement of
 # its own. Its Load-Value has the same type disagreement as S6a's, covered
 # by the "652 0 type" line above.
+#
+# Sh/Dh (proto/3gpp/ts29329/sh.proto, TS 29.329 V18.0.0): no disagreement of
+# its own. Its Load-Value is covered by the "652 0 type" line above.

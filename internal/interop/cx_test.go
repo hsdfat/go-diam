@@ -115,21 +115,27 @@ func fiorixHome(code, vendor uint32) (uint32, *dict.AVP) {
 	return 0, nil
 }
 
-// cxBuilder builds the go-diameter AVPs of one Cx message.
-type cxBuilder struct{ request bool }
+// perAVP builds the go-diameter AVPs of one message of an application that
+// go-diameter has no dictionary for (Cx, Sh): restated holds the AVPs it
+// defines nowhere, requestM the M-bit rules that depend on the message.
+type perAVP struct {
+	request  bool
+	restated map[string]restated
+	requestM map[[2]uint32]bool
+}
 
 // a builds an AVP that go-diameter defines: code from its constants, flags
-// from its dictionary (with the per-message rule of cxRequestM).
-func (c cxBuilder) a(code, vendor uint32, data datatype.Type) *fd.AVP {
+// from its dictionary (with the per-message rule of requestM).
+func (c perAVP) a(code, vendor uint32, data datatype.Type) *fd.AVP {
 	_, def := fiorixHome(code, vendor)
 	if def == nil {
-		panic(fmt.Sprintf("AVP %d vendor %d is in no go-diameter application: add it to cxRestated", code, vendor))
+		panic(fmt.Sprintf("AVP %d vendor %d is in no go-diameter application: add it to the restated list", code, vendor))
 	}
 	var flags uint8
 	if strings.Contains(def.Must, "M") {
 		flags = avp.Mbit
 	}
-	if m, ok := cxRequestM[[2]uint32{code, vendor}]; ok && c.request {
+	if m, ok := c.requestM[[2]uint32{code, vendor}]; ok && c.request {
 		flags = 0
 		if m {
 			flags = avp.Mbit
@@ -138,11 +144,11 @@ func (c cxBuilder) a(code, vendor uint32, data datatype.Type) *fd.AVP {
 	return fd.NewAVP(code, flags, vendor, data)
 }
 
-// r builds an AVP that go-diameter does not define, from cxRestated.
-func (c cxBuilder) r(name string, data datatype.Type) *fd.AVP {
-	d, ok := cxRestated[name]
+// r builds an AVP that go-diameter does not define, from the restated list.
+func (c perAVP) r(name string, data datatype.Type) *fd.AVP {
+	d, ok := c.restated[name]
 	if !ok {
-		panic("not in cxRestated: " + name)
+		panic("not in the restated list: " + name)
 	}
 	var flags uint8
 	if d.m {
@@ -151,11 +157,11 @@ func (c cxBuilder) r(name string, data datatype.Type) *fd.AVP {
 	return fd.NewAVP(d.code, flags, d.vendor, data)
 }
 
-func (c cxBuilder) g(code, vendor uint32, avps ...*fd.AVP) *fd.AVP {
+func (c perAVP) g(code, vendor uint32, avps ...*fd.AVP) *fd.AVP {
 	return c.a(code, vendor, &fd.GroupedAVP{AVP: avps})
 }
 
-func (c cxBuilder) rg(name string, avps ...*fd.AVP) *fd.AVP {
+func (c perAVP) rg(name string, avps ...*fd.AVP) *fd.AVP {
 	return c.r(name, &fd.GroupedAVP{AVP: avps})
 }
 
@@ -189,7 +195,7 @@ func cxPairs() []pair {
 	)
 	when := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
 	nsm := base.AuthSessionStateNoStateMaintained
-	q, s := cxBuilder{request: true}, cxBuilder{}
+	q, s := perAVP{true, cxRestated, cxRequestM}, perAVP{false, cxRestated, cxRequestM}
 
 	session := func(v string) *fd.AVP { return fa(avp.SessionID, datatype.UTF8String(v)) }
 	authState := func() *fd.AVP { return enum(avp.AuthSessionState, 1) }
@@ -210,7 +216,7 @@ func cxPairs() []pair {
 	}
 
 	gFeatures := []cx.SupportedFeatures{{VendorId: tgpp, FeatureListId: 1, FeatureList: 0x0f}}
-	fFeatures := func(b cxBuilder) *fd.AVP {
+	fFeatures := func(b perAVP) *fd.AVP {
 		return b.g(avp.SupportedFeatures, tgpp, b.a(avp.VendorID, 0, datatype.Unsigned32(tgpp)),
 			b.a(avp.FeatureListID, tgpp, datatype.Unsigned32(1)), b.a(avp.FeatureList, tgpp, datatype.Unsigned32(0x0f)))
 	}
@@ -522,8 +528,9 @@ func TestCxFiorixToGoDiam(t *testing.T) {
 // fiorixDecodeAVP decodes one encoded AVP the way go-diameter would inside
 // the application that defines it, and does the same for each member of a
 // grouped AVP that the enclosing application does not know. An AVP that
-// go-diameter defines nowhere stays datatype.Unknown.
-func fiorixDecodeAVP(raw []byte) (*fd.AVP, error) {
+// go-diameter defines nowhere is decoded in app, which go-diameter has no
+// dictionary for, so it stays datatype.Unknown.
+func fiorixDecodeAVP(raw []byte, app uint32) (*fd.AVP, error) {
 	if len(raw) < 8 {
 		return nil, fmt.Errorf("short AVP")
 	}
@@ -531,13 +538,13 @@ func fiorixDecodeAVP(raw []byte) (*fd.AVP, error) {
 	if raw[4]&avp.Vbit != 0 && len(raw) >= 12 {
 		vendor = binary.BigEndian.Uint32(raw[8:])
 	}
-	app, def := fiorixHome(code, vendor)
+	home, def := fiorixHome(code, vendor)
 	if def == nil {
-		app = cxApp // decodes as datatype.Unknown
+		home = app // decodes as datatype.Unknown
 	}
-	a, err := fd.DecodeAVP(raw, app, dict.Default)
+	a, err := fd.DecodeAVP(raw, home, dict.Default)
 	if err != nil {
-		return nil, fmt.Errorf("AVP %d vendor %d in application %d: %w", code, vendor, app, err)
+		return nil, fmt.Errorf("AVP %d vendor %d in application %d: %w", code, vendor, home, err)
 	}
 	if g, ok := a.Data.(*fd.GroupedAVP); ok {
 		for i, m := range g.AVP {
@@ -548,7 +555,7 @@ func fiorixDecodeAVP(raw []byte) (*fd.AVP, error) {
 			if err != nil {
 				return nil, err
 			}
-			if g.AVP[i], err = fiorixDecodeAVP(b); err != nil {
+			if g.AVP[i], err = fiorixDecodeAVP(b, app); err != nil {
 				return nil, err
 			}
 		}
@@ -559,67 +566,74 @@ func fiorixDecodeAVP(raw []byte) (*fd.AVP, error) {
 // go-diam encodes; go-diameter reads the message (it has no Cx dictionary,
 // so this checks only the framing) and then decodes every AVP, at any
 // depth, with its own definition of that AVP from whichever application
-// has it. The result must re-encode to the same bytes, carry the values
-// go-diameter's own message carries, and contain no Unknown AVP except the
-// restated ones.
+// has it. See checkGoDiamToFiorixByAVP.
 func TestCxGoDiamToFiorix(t *testing.T) {
+	for _, p := range cxPairs() {
+		t.Run(p.name, func(t *testing.T) { checkGoDiamToFiorixByAVP(t, p, cxApp, cxRestated) })
+	}
+}
+
+// checkGoDiamToFiorixByAVP checks the go-diam to go-diameter direction for an
+// application go-diameter has no dictionary for. go-diameter reads the
+// message (framing only) and decodes every AVP, at any depth, in the
+// application that defines it. The result must re-encode to the same bytes,
+// carry the values go-diameter's own message carries, and contain no Unknown
+// AVP except the restated ones.
+func checkGoDiamToFiorixByAVP(t *testing.T, p pair, app uint32, restatedAVPs map[string]restated) {
+	t.Helper()
 	gaps := map[[2]uint32]string{}
-	for name, d := range cxRestated {
+	for name, d := range restatedAVPs {
 		gaps[[2]uint32{d.code, d.vendor}] = name
 	}
-	for _, p := range cxPairs() {
-		t.Run(p.name, func(t *testing.T) {
-			wire, err := p.godiam.AppendMarshal(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			m, err := fd.ReadMessage(bytes.NewReader(wire), dict.Default)
-			if err != nil {
-				t.Fatalf("go-diameter ReadMessage: %v", err)
-			}
-			if m.Header.HopByHopID != hopByHop || m.Header.EndToEndID != endToEnd || m.Header.ApplicationID != cxApp ||
-				m.Header.CommandCode != p.fiorix.Header.CommandCode || m.Header.CommandFlags != p.fiorix.Header.CommandFlags {
-				t.Fatalf("header = %+v, want %+v", m.Header, p.fiorix.Header)
-			}
-			if again := serialize(t, m); !bytes.Equal(again, wire) {
-				t.Fatalf("go-diameter re-encode differs\n%x\n%x", wire, again)
-			}
-			if len(m.AVP) != len(p.fiorix.AVP) {
-				t.Fatalf("%d AVPs, go-diameter's own message has %d", len(m.AVP), len(p.fiorix.AVP))
-			}
-			for i, top := range m.AVP {
-				raw, err := top.Serialize()
-				if err != nil {
-					t.Fatal(err)
-				}
-				a, err := fiorixDecodeAVP(raw)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := noUnknown([]*fd.AVP{a}, "", gaps); err != nil {
-					t.Fatal(err)
-				}
-				again, err := a.Serialize()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !bytes.Equal(again, raw) {
-					t.Fatalf("AVP %d: go-diameter re-encode differs\n%x\n%x", a.Code, raw, again)
-				}
-				want := p.fiorix.AVP[i]
-				wb, err := want.Serialize()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !bytes.Equal(wb, raw) {
-					t.Fatalf("AVP #%d differs from go-diameter's own\n%x\n%x", i, wb, raw)
-				}
-				// Where go-diameter knows every AVP of the subtree, the
-				// values it decodes are the ones it encoded.
-				if noUnknown([]*fd.AVP{a}, "", nil) == nil && a.Data.String() != want.Data.String() {
-					t.Fatalf("AVP #%d = %v, go-diameter's own message has %v", i, a, want)
-				}
-			}
-		})
+	wire, err := p.godiam.AppendMarshal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := fd.ReadMessage(bytes.NewReader(wire), dict.Default)
+	if err != nil {
+		t.Fatalf("go-diameter ReadMessage: %v", err)
+	}
+	if m.Header.HopByHopID != hopByHop || m.Header.EndToEndID != endToEnd || m.Header.ApplicationID != app ||
+		m.Header.CommandCode != p.fiorix.Header.CommandCode || m.Header.CommandFlags != p.fiorix.Header.CommandFlags {
+		t.Fatalf("header = %+v, want %+v", m.Header, p.fiorix.Header)
+	}
+	if again := serialize(t, m); !bytes.Equal(again, wire) {
+		t.Fatalf("go-diameter re-encode differs\n%x\n%x", wire, again)
+	}
+	if len(m.AVP) != len(p.fiorix.AVP) {
+		t.Fatalf("%d AVPs, go-diameter's own message has %d", len(m.AVP), len(p.fiorix.AVP))
+	}
+	for i, top := range m.AVP {
+		raw, err := top.Serialize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := fiorixDecodeAVP(raw, app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := noUnknown([]*fd.AVP{a}, "", gaps); err != nil {
+			t.Fatal(err)
+		}
+		again, err := a.Serialize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(again, raw) {
+			t.Fatalf("AVP %d: go-diameter re-encode differs\n%x\n%x", a.Code, raw, again)
+		}
+		want := p.fiorix.AVP[i]
+		wb, err := want.Serialize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(wb, raw) {
+			t.Fatalf("AVP #%d differs from go-diameter's own\n%x\n%x", i, wb, raw)
+		}
+		// Where go-diameter knows every AVP of the subtree, the values it
+		// decodes are the ones it encoded.
+		if noUnknown([]*fd.AVP{a}, "", nil) == nil && a.Data.String() != want.Data.String() {
+			t.Fatalf("AVP #%d = %v, go-diameter's own message has %v", i, a, want)
+		}
 	}
 }
