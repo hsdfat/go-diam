@@ -32,3 +32,10 @@
 # dictionary of its own. Its AVPs (Terminal-Information, IMEI,
 # Software-Version, 3GPP2-MEID, Equipment-Status, DRMP) are the S6a entries,
 # compared above with no disagreement.
+#
+# S6t (proto/3gpp/ts29336/s6t.proto, TS 29.336 V18.2.0). Table 8.4.1-2 gives
+# the S6t M-bit of re-used AVPs; where it is empty the defining
+# specification's rule applies.
+848 10415 m TS 29.336 table 8.4.1-2: Served-Party-IP-Address "Must not set" in S6t; go-diameter has the TS 32.299 rule (V,M)
+1401 10415 m TS 29.336 table 8.4.1-2: Terminal-Information "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
+1456 10415 m TS 29.336 table 8.4.1-2: PDN-Type "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
