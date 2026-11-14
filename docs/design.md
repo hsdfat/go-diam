@@ -553,3 +553,32 @@ The text above is unchanged; these win.
   DIAMETER_SUCCESS. The grammars (§7.3.3, §7.2.20) have all of these
   optional and the rules have no Result-Code of their own, so `Validate`
   checks the grammar only.
+- **S6t release.** S6t is transcribed from TS 29.336 V18.2.0, the latest
+  Release 18 version, with V13.2.0 (the earliest Release 13 version ETSI
+  publishes; S6t starts in Release 13) as the oldest-release reference
+  instead of Release 8. The S6a and Sh rulings apply unchanged: re-used AVPs
+  in the application's own dictionary (`Avp`, `IetfAvp`) with the M-bit of
+  table 8.4.1-2 or, where its column is empty, of the defining
+  specification; Supported-Features with the M-bit in requests only
+  (§8.1.9 applies TS 29.229 §7.2); `[ Failed-AVP ]` in answers. The interop
+  of §8 gate 3 is built AVP by AVP (`s6tRestated` in
+  `internal/interop/s6t_test.go`), and where go-diameter defines an AVP
+  with another M-bit than S6t gives it (table 8.4.1-2 clears it for
+  Served-Party-IP-Address, Terminal-Information and PDN-Type), `s6tM`
+  applies the S6t bit on go-diameter's side; a test keeps both lists
+  exact. No benchmark for S6t.
+- **§5.3a, AVPs dropped after the oldest release (S6t).** The mirror rule
+  recorded for Cx RTR applies twice: Release 13 RIR lists
+  `*[ Failed-AVP ]` and Release 13 Monitoring-Event-Config-Status starts
+  with `[ Service-Result ]`, both M-bit AVPs that the current release no
+  longer lists. Both are kept at their Release 13 position as optional.
+- **§5.1, a request header without REQ (S6t RIR).** TS 29.336 §8.2.5
+  writes the RIR header as `8388719, PXY` and says the R-bit is cleared,
+  which would make RIR and RIA the same message. The command table names
+  RIR the request of the pair, so it is generated with `request: true`.
+- **Vendor-Specific-Application-Id named by a NOTE only (S6t).** TS 29.336
+  §8.2.2 NOTE says every CCF of the specification includes
+  `[ Vendor-Specific-Application-Id ]` and that a receiver ignores it, but
+  the S6t ABNFs leave it out. With the M-bit set it would land in Unknown
+  and fail with 5001, the opposite of "ignore", so every S6t command
+  carries it as optional after DRMP, where S6a puts it.
