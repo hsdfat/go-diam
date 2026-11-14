@@ -1,6 +1,6 @@
 # go-diam design
 
-Date: 2026-11-08. Status: draft for owner approval.
+Date: 2026-11-08. Status: in use; updated as applications are added.
 
 ## 1. Intent
 
