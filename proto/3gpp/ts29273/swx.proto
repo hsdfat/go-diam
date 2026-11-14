@@ -1,0 +1,716 @@
+// SWx: 3GPP AAA Server - HSS (Diameter application 16777265).
+//
+// Source: 3GPP TS 29.273 V18.6.0 (Release 18), published as
+// ETSI TS 129 273 V18.6.0 (2025-03); the latest Release 18 version.
+//   Application:   §8.2.1 (16777265, vendor 3GPP)
+//   Commands:      §8.2.2.1-8.2.2.4 (MAR/MAA, PPR/PPA, SAR/SAA, RTR/RTA)
+//   AVP tables:    §8.2.3.0 tables 8.2.3.0/1 and 8.2.3.0/2
+//   Grouped AVPs:  §8.2.3.1 (Non-3GPP-User-Data), 8.2.3.2 (Subscription-Id),
+//                  8.2.3.9 (SIP-Auth-Data-Item), 8.2.3.13 (Trace-Info),
+//                  8.2.3.19 (TWAN-Access-Info), 5.2.3.18 (WLAN-Identifier),
+//                  5.2.3.24 (Access-Network-Info)
+//   Enumerations:  §8.2.3.3, 8.2.3.4, 5.2.3.9; RFC 4006 §8.47
+// The SSID and HESSID members of WLAN-Identifier and Access-Network-Info
+// are STa AVPs (§5.2.3.22-5.2.3.23) with the flags of table 5.2.3.1/1.
+// Release 8 reference: TS 29.273 V8.16.0 (ETSI TS 129 273 V8.16.0, 2015-07).
+//
+// Dictionary. The SWx commands are the Cx commands under another
+// application id, and most re-used AVPs are already transcribed in
+// ts29229/cx.proto (TS 29.229) or ts29272/s6a.proto (TS 29.272), both
+// imported here. Table 8.2.3.0/2 leaves the M-bit of a re-used AVP to its
+// defining specification except for OC-Supported-Features, OC-OLR, DRMP,
+// Load and MPS-Priority ("Must not set"), so an AVP whose entry in cx.proto
+// or s6a.proto carries the flags of its defining specification resolves
+// through the import, as S13 does with s6a.proto, and its grouped type is
+// used from there. This file's own dictionaries hold the rest:
+//   - every AVP of table 8.2.3.0/1, and the STa AVPs that its grouped AVPs
+//     contain (SSID, HESSID);
+//   - re-used AVPs that neither import carries: Subscription-Id and its
+//     members (RFC 4006 §8.46-8.48), MIP6-Feature-Vector (RFC 5447 §4.2.5,
+//     flags RFC 5778 §6), BSSID (TS 32.299 §7.2.30A), Location-Information,
+//     Location-Data and Operator-Name (RFC 5580 §4.1-4.3, flags §6) and
+//     Logical-Access-ID (ETSI ES 283 034 V2.2.0 §7.3.3);
+//   - re-used AVPs whose S6a entry has a TS 29.272 M-bit override that the
+//     defining specification does not have: RAT-Type and
+//     Visited-Network-Identifier;
+//   - re-used AVPs that both imports carry, which would not resolve
+//     unambiguously: Confidentiality-Key, Integrity-Key,
+//     Supported-Features, DRMP, OC-Supported-Features, OC-OLR and Load.
+//     Their members resolve in cx.proto, whose types are used.
+// Re-used through the imports: from cx.proto SIP-Number-Auth-Items,
+// SIP-Item-Number, SIP-Authentication-Scheme, SIP-Authenticate,
+// SIP-Authorization, Server-Assignment-Type, Deregistration-Reason; from
+// s6a.proto Terminal-Information, Context-Identifier, Service-Selection,
+// MIP6-Agent-Info, Active-APN, Emergency-Services, Local-Time-Zone, AMBR,
+// 3GPP-Charging-Characteristics, APN-OI-Replacement, APN-Configuration,
+// Trace-Data, Trace-Reference, UE-Usage-Type, Emergency-Info,
+// Core-Network-Restrictions and MPS-Priority; from base.proto User-Name,
+// Session-Timeout and the base protocol AVPs.
+//
+// Release compatibility (design §5.3a): every AVP that is required here is
+// also required in TS 29.273 V8.16.0, and the Release 8 grouped AVPs have
+// no required member. Release 8 has none of DRMP, AN-Trusted,
+// AAA-Failure-Indication, OC-*, Load, PPR-Flags, Access-Network-Info,
+// Local-Time-Zone, Active-APN, Terminal-Information in SAR,
+// Emergency-Services, nor the Non-3GPP-User-Data members after Trace-Info;
+// all are optional here. No exception is needed.
+//
+// Rulings where the specification text needs reading:
+//   - Access-Network-Info: table 8.2.3.0/1 gives code 1524, which is SSID
+//     (table 5.2.3.1/1). The defining clause 5.2.3.24, its ABNF and table
+//     5.2.3.1/1 give 1526; 1526 is used.
+//   - AN-Trusted: table 8.2.3.0/1 (SWx) says V, M must not; table 5.2.3.1/1
+//     (STa) says M,V. The SWx table is used.
+//   - RAT-Type: table 8.2.3.0/2 leaves the M-bit to TS 29.212, whose table
+//     5.3.0.1 says V, M should not; it is sent with the M-bit clear. S6a sets
+//     it (TS 29.272 table 7.3.1/2), so the S6a entry is not used.
+//   - Push-Profile-Request: the header is "305, REQ" without PXY in
+//     V18.6.0 and in V8.16.0, while PPA has PXY. Both are transcribed as
+//     written: PPR is sent with the P-bit clear, PPA with it set.
+//   - MAA and SAA write "[ OC-OLR ] ]"; read as [ OC-OLR ].
+//   - MAR lists { Destination-Realm } before [ Destination-Host ]; that
+//     order is kept, and it is the order go-diam encodes.
+//   - Emergency-Services (SAR) is not in table 8.2.3.0/2. It is the
+//     TS 29.273 §7.2.3.4 AVP (1538, V, M must not, table 5.2.3.1/1), which
+//     s6a.proto carries with those flags.
+//   - Subscription-Id: §8.2.3.2 gives both members as optional where
+//     RFC 4006 §8.46 has them required. The SWx grammar is used, so an
+//     RFC 4006 Subscription-Id passes Validate too.
+//   - SIP-Auth-Data-Item: the SWx grammar of §8.2.3.9 is used, not the
+//     TS 29.229 §6.3.13 one. A TS 29.229 member that SWx does not list
+//     goes to Unknown; one with the M-bit set fails Validate with 5001.
+//   - Supported-Features: table 8.2.3.0/2 points to TS 29.229, whose
+//     §7.2.1 sets the M-bit in requests and clears it in answers, as on Cx.
+//     The dictionary has it clear and every request sets (diam.m) = true.
+//   - Grouped AVPs re-used from s6a.proto carry the S6a flag rules of their
+//     members. The one that differs on SWx is Visited-Network-Identifier
+//     inside APN-Configuration, Specific-APN-Info and Active-APN: S6a
+//     clears its M-bit (TS 29.272 table 7.3.1/2), TS 29.229 sets it.
+//     Tables 8.2.3.0/1 NOTE 2 and 8.2.3.0/2 NOTE 2 say a receiver ignores
+//     the M-bit of an AVP it understands, and an AVP without the M-bit is
+//     never rejected.
+//   - Conditions stated in prose are procedure rules, not grammar, and
+//     Validate does not enforce them: Trace-Info carries Trace-Data or
+//     Trace-Reference (§8.2.3.13); a non-empty Non-3GPP-User-Data carries
+//     Non-3GPP-IP-Access, Non-3GPP-IP-Access-APN, Context-Identifier and an
+//     APN-Configuration (§8.2.3.1); Access-Network-Info carries SSID
+//     (§5.2.3.24).
+//   - PPR-Flags, Access-Authorization-Flags and AAA-Failure-Indication are
+//     Unsigned32 bit masks (tables 8.2.3.17/1, 8.2.3.20/1, 8.2.3.21/1) and
+//     ERP-Authorization is Unsigned32 with two named values (§8.2.3.27);
+//     all four are plain uint32 fields.
+//   - Logical-Access-ID is spelt Logical-Access-Id in ES 283 034; the
+//     TS 29.273 spelling is used. 3GPP-AAA-Server-Name is
+//     TGPP_AAA_SERVER_NAME.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.swx;
+
+import "3gpp/ts29229/cx.proto";
+import "3gpp/ts29272/s6a.proto";
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/swx";
+
+// Avp is the SWx dictionary of 3GPP AVPs (vendor 10415): table 8.2.3.0/1,
+// the STa AVPs its grouped AVPs contain, and the re-used 3GPP AVPs that do
+// not resolve through the imports (see the file header). The M-bit is set
+// where the flag rules say "Must"; "May" is left clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // §8.2.3.24, table 8.2.3.0/1: M,V
+  // 3GPP-AAA-Server-Name
+  TGPP_AAA_SERVER_NAME = 318 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.229 §6.3.1 (M,V); table 8.2.3.0/2 gives no override
+  VISITED_NETWORK_IDENTIFIER = 600 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.229 §6.3.27 (M,V)
+  CONFIDENTIALITY_KEY = 625 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.229 §6.3.28 (M,V)
+  INTEGRITY_KEY = 626 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.229 §6.3.29 (V, M may; set in requests per §7.2.1)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.212 §5.3.31, table 5.3.0.1: V, M should not
+  RAT_TYPE = 1032 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // §8.2.3.1: M,V
+  NON_3GPP_USER_DATA = 1500 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.2.3.3: M,V
+  NON_3GPP_IP_ACCESS = 1501 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // §8.2.3.4: M,V
+  NON_3GPP_IP_ACCESS_APN = 1502 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // §5.2.3.9, table 8.2.3.0/1: V, M must not (table 5.2.3.1/1 says M,V)
+  AN_TRUSTED = 1503 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // §5.2.3.7: M,V
+  ANID = 1504 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  // §8.2.3.13: V, M must not
+  TRACE_INFO = 1505 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.2.3.17: V, M must not
+  PPR_FLAGS = 1508 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §5.2.3.18: V, M must not
+  WLAN_IDENTIFIER = 1509 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.2.3.19: V, M must not
+  TWAN_ACCESS_INFO = 1510 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.2.3.20: V, M must not
+  ACCESS_AUTHORIZATION_FLAGS = 1511 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §8.2.3.18: V, M must not
+  TWAN_DEFAULT_APN_CONTEXT_ID = 1512 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §8.2.3.21: V, M must not
+  AAA_FAILURE_INDICATION = 1518 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §5.2.3.22, table 5.2.3.1/1: V, M must not
+  SSID = 1524 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // §5.2.3.23, table 5.2.3.1/1: V, M must not
+  HESSID = 1525 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // §5.2.3.24, table 5.2.3.1/1: V, M must not (table 8.2.3.0/1 writes code 1524)
+  ACCESS_NETWORK_INFO = 1526 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.2.3.27: V, M must not
+  ERP_AUTHORIZATION = 1541 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 32.299 §7.2.30A, table 7.2.0.1: V,M
+  BSSID = 2716 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+}
+
+// IetfAvp holds the re-used IETF AVPs (vendor 0) that do not resolve
+// through the imports: a separate dictionary, since an enum value number is
+// the AVP code.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 5447 §4.2.5; flags RFC 5778 §6: M, V must not
+  MIP6_FEATURE_VECTOR = 124 [(diam.def) = {m: true, type: UNSIGNED64}];
+  // RFC 5580 §4.1; flags §6: M,V must not
+  OPERATOR_NAME = 126 [(diam.def) = {type: OCTET_STRING}];
+  // RFC 5580 §4.2; flags §6: M,V must not
+  LOCATION_INFORMATION = 127 [(diam.def) = {type: OCTET_STRING}];
+  // RFC 5580 §4.3; flags §6: M,V must not
+  LOCATION_DATA = 128 [(diam.def) = {type: OCTET_STRING}];
+  // RFC 7944 §9.1; table 8.2.3.0/2: Must not set
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+  // RFC 4006 §8.46: M, V must not
+  SUBSCRIPTION_ID = 443 [(diam.def) = {m: true, type: GROUPED}];
+  // RFC 4006 §8.48: M, V must not
+  SUBSCRIPTION_ID_DATA = 444 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 4006 §8.47: M, V must not
+  SUBSCRIPTION_ID_TYPE = 450 [(diam.def) = {m: true, type: ENUMERATED}];
+  // RFC 7683 §7.1; table 8.2.3.0/2: Must not set
+  OC_SUPPORTED_FEATURES = 621 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.3; table 8.2.3.0/2: Must not set
+  OC_OLR = 623 [(diam.def) = {type: GROUPED}];
+  // RFC 8583 §7.1; table 8.2.3.0/2: Must not set
+  LOAD = 650 [(diam.def) = {type: GROUPED}];
+}
+
+// EtsiAvp holds the ETSI AVP (vendor 13019) of Access-Network-Info.
+enum EtsiAvp {
+  option (diam.dictionary) = true;
+  ETSI_AVP_UNSPECIFIED = 0;
+  // ETSI ES 283 034 V2.2.0 §7.3.3, table 10: V, M must not
+  LOGICAL_ACCESS_ID = 302 [(diam.def) = {vendor: 13019, type: OCTET_STRING}];
+}
+
+// Non-3GPP-IP-Access (§8.2.3.3).
+enum Non3gppIpAccess {
+  NON_3GPP_IP_ACCESS_NON_3GPP_SUBSCRIPTION_ALLOWED = 0;
+  NON_3GPP_IP_ACCESS_NON_3GPP_SUBSCRIPTION_BARRED = 1;
+}
+
+// Non-3GPP-IP-Access-APN (§8.2.3.4); the specification writes the values
+// Non_3GPP_APNS_ENABLE and Non_3GPP_APNS_DISABLE.
+enum Non3gppIpAccessApn {
+  NON_3GPP_IP_ACCESS_APN_NON_3GPP_APNS_ENABLE = 0;
+  NON_3GPP_IP_ACCESS_APN_NON_3GPP_APNS_DISABLE = 1;
+}
+
+// AN-Trusted (§5.2.3.9).
+enum AnTrusted {
+  AN_TRUSTED_TRUSTED = 0;
+  AN_TRUSTED_UNTRUSTED = 1;
+}
+
+// Subscription-Id-Type (RFC 4006 §8.47). §8.2.3.2: EPC uses END_USER_E164
+// (MSISDN) and END_USER_NAI (External Identifier).
+enum SubscriptionIdType {
+  SUBSCRIPTION_ID_TYPE_END_USER_E164 = 0;
+  SUBSCRIPTION_ID_TYPE_END_USER_IMSI = 1;
+  SUBSCRIPTION_ID_TYPE_END_USER_SIP_URI = 2;
+  SUBSCRIPTION_ID_TYPE_END_USER_NAI = 3;
+  SUBSCRIPTION_ID_TYPE_END_USER_PRIVATE = 4;
+}
+
+// Non-3GPP-User-Data (§8.2.3.1)
+//
+// Non-3GPP-User-Data ::= < AVP Header: 1500 10415 >
+//   [ Subscription-ID ]
+//   [ Non-3GPP-IP-Access ]
+//   [ Non-3GPP-IP-Access-APN ]
+//   *[ RAT-Type ]
+//   [ Session-Timeout ]
+//   [ MIP6-Feature-Vector ]
+//   [ AMBR ]
+//   [ 3GPP-Charging-Characteristics ]
+//   [ Context-Identifier ]
+//   [ APN-OI-Replacement ]
+//   *[ APN-Configuration ]
+//   [ Trace-Info ]
+//   [ TWAN-Default-APN-Context-Id ]
+//   *[ TWAN-Access-Info]
+//   [ UE-Usage-Type ]
+//   [ Emergency-Info ]
+//   [ ERP-Authorization ]
+//   [ Core-Network-Restrictions ]
+//   [ MPS-Priority ]
+//   *[ AVP ]
+message Non3gppUserData {
+  option (diam.extensible) = true;
+  optional SubscriptionId subscription_id = 1;
+  optional Non3gppIpAccess non3gpp_ip_access = 2 [(diam.avp) = "NON_3GPP_IP_ACCESS"];
+  optional Non3gppIpAccessApn non3gpp_ip_access_apn = 3 [(diam.avp) = "NON_3GPP_IP_ACCESS_APN"];
+  repeated godiam.s6a.RatType rat_type = 4;
+  optional uint32 session_timeout = 5;
+  optional uint64 mip6_feature_vector = 6;
+  optional godiam.s6a.Ambr ambr = 7;
+  optional string tgpp_charging_characteristics = 8;
+  optional uint32 context_identifier = 9;
+  optional string apn_oi_replacement = 10;
+  repeated godiam.s6a.ApnConfiguration apn_configuration = 11;
+  optional TraceInfo trace_info = 12;
+  optional uint32 twan_default_apn_context_id = 13;
+  repeated TwanAccessInfo twan_access_info = 14;
+  optional uint32 ue_usage_type = 15;
+  optional godiam.s6a.EmergencyInfo emergency_info = 16;
+  optional uint32 erp_authorization = 17;
+  optional uint32 core_network_restrictions = 18;
+  optional uint32 mps_priority = 19;
+}
+
+// Subscription-Id (§8.2.3.2; RFC 4006 §8.46 has both members required)
+//
+// Subscription-Id ::= < AVP Header: 443 >
+//   [ Subscription-Id-Type ]
+//   [ Subscription-Id-Data ]
+message SubscriptionId {
+  optional SubscriptionIdType subscription_id_type = 1;
+  optional string subscription_id_data = 2;
+}
+
+// SIP-Auth-Data-Item (§8.2.3.9; the members SWx needs of TS 29.229 §6.3.13)
+//
+// SIP-Auth-Data-Item ::= < AVP Header: 612 10415 >
+//   [ SIP-Item-Number ]
+//   [ SIP-Authentication-Scheme ]
+//   [ SIP-Authenticate ]
+//   [ SIP-Authorization ]
+//   [ Confidentiality-Key ]
+//   [ Integrity-Key ]
+//   *[ AVP ]
+message SipAuthDataItem {
+  option (diam.extensible) = true;
+  optional uint32 sip_item_number = 1;
+  optional string sip_authentication_scheme = 2;
+  optional bytes sip_authenticate = 3;
+  optional bytes sip_authorization = 4;
+  optional bytes confidentiality_key = 5;
+  optional bytes integrity_key = 6;
+}
+
+// Trace-Info (§8.2.3.13)
+//
+// Trace-Info ::= < AVP header: 1505 10415>
+//   [Trace-Data]
+//   [Trace-Reference]
+//   *[AVP]
+message TraceInfo {
+  option (diam.extensible) = true;
+  optional godiam.s6a.TraceData trace_data = 1;
+  optional bytes trace_reference = 2;
+}
+
+// TWAN-Access-Info (§8.2.3.19)
+//
+// TWAN-Access-Info::= < AVP Header: 1510 10415 >
+//   [ Access-Authorization-Flags ]
+//   [ WLAN-Identifier ]
+//   *[ AVP ]
+message TwanAccessInfo {
+  option (diam.extensible) = true;
+  optional uint32 access_authorization_flags = 1;
+  optional WlanIdentifier wlan_identifier = 2;
+}
+
+// WLAN-Identifier (§5.2.3.18)
+//
+// WLAN-Identifier ::= < AVP Header: 1509 10415 >
+//   [SSID ]
+//   [HESSID ]
+//   *[ AVP ]
+message WlanIdentifier {
+  option (diam.extensible) = true;
+  optional string ssid = 1;
+  optional string hessid = 2;
+}
+
+// Access-Network-Info (§5.2.3.24)
+//
+// Access-Network-Info ::= < AVP Header: 1526 10415 >
+//   [ SSID ]
+//   [ BSSID ]
+//   [ Location-Information ]
+//   [ Location-Data ]
+//   [ Operator-Name ]
+//   [ Logical-Access-ID ]
+//   *[ AVP ]
+message AccessNetworkInfo {
+  option (diam.extensible) = true;
+  optional string ssid = 1;
+  optional string bssid = 2;
+  optional bytes location_information = 3;
+  optional bytes location_data = 4;
+  optional bytes operator_name = 5;
+  optional bytes logical_access_id = 6;
+}
+
+// Multimedia-Auth-Request (8.2.2.1)
+//
+// < Multimedia-Auth-Request > ::= < Diameter Header: 303, REQ, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Realm }
+//   [ Destination-Host ]
+//   { User-Name }
+//   [ RAT-Type ]
+//   [ AN-Trusted ]
+//   [ ANID ]
+//   [ Visited-Network-Identifier]
+//   [ Terminal-Information ]
+//   { SIP-Auth-Data-Item }
+//   { SIP-Number-Auth-Items }
+//   [AAA-Failure-Indication ]
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message MultimediaAuthRequest {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777265
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_realm = 7;
+  optional string destination_host = 8;
+  string user_name = 9;
+  optional godiam.s6a.RatType rat_type = 10;
+  optional AnTrusted an_trusted = 11;
+  optional string anid = 12;
+  optional bytes visited_network_identifier = 13;
+  optional godiam.s6a.TerminalInformation terminal_information = 14;
+  SipAuthDataItem sip_auth_data_item = 15;
+  uint32 sip_number_auth_items = 16;
+  optional uint32 aaa_failure_indication = 17;
+  optional godiam.cx.OcSupportedFeatures oc_supported_features = 18;
+  // TS 29.229 §7.2.1: M-bit set in a request
+  repeated godiam.cx.SupportedFeatures supported_features = 19 [(diam.m) = true];
+}
+
+// Multimedia-Auth-Answer (8.2.2.1)
+//
+// < Multimedia-Auth-Answer > ::= < Diameter Header: 303, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { User-Name}
+//   [ SIP-Number-Auth-Items ]
+//   *[ SIP-Auth-Data-Item ]
+//   [ 3GPP-AAA-Server-Name ]
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ] ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message MultimediaAuthAnswer {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777265
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  string user_name = 9;
+  optional uint32 sip_number_auth_items = 10;
+  repeated SipAuthDataItem sip_auth_data_item = 11;
+  optional string tgpp_aaa_server_name = 12;
+  optional godiam.cx.OcSupportedFeatures oc_supported_features = 13;
+  optional godiam.cx.OcOlr oc_olr = 14;
+  repeated godiam.cx.Load load = 15;
+  repeated godiam.cx.SupportedFeatures supported_features = 16;
+}
+
+// Push-Profile-Request (8.2.2.2)
+//
+// < Push-Profile-Request > ::= < Diameter Header: 305, REQ, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   [ Non-3GPP-User-Data ]
+//   [ PPR-Flags ]
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+//
+// No PXY: see the file header.
+message PushProfileRequest {
+  option (diam.command) = {
+    code: 305
+    app_id: 16777265
+    request: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  optional Non3gppUserData non3gpp_user_data = 10 [(diam.avp) = "NON_3GPP_USER_DATA"];
+  optional uint32 ppr_flags = 11;
+  // TS 29.229 §7.2.1: M-bit set in a request
+  repeated godiam.cx.SupportedFeatures supported_features = 12 [(diam.m) = true];
+}
+
+// Push-Profile-Answer (8.2.2.2)
+//
+// < Push-Profile-Answer > ::= < Diameter Header: 305, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Access-Network-Info ]
+//   [ Local-Time-Zone ]
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message PushProfileAnswer {
+  option (diam.command) = {
+    code: 305
+    app_id: 16777265
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional AccessNetworkInfo access_network_info = 9;
+  optional godiam.s6a.LocalTimeZone local_time_zone = 10;
+  repeated godiam.cx.SupportedFeatures supported_features = 11;
+}
+
+// Server-Assignment-Request (8.2.2.3)
+//
+// < Server-Assignment-Request > ::= < Diameter Header: 301, REQ, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   [ Service-Selection ]
+//   [ Context-Identifier ]
+//   [ MIP6-Agent-Info ]
+//   [ Visited-Network-Identifier ]
+//   { User-Name}
+//   { Server-Assignment-Type }
+//   *[ Active-APN ]
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   [ Terminal-Information ]
+//   [ Emergency-Services ]
+//   …
+//   *[ AVP ]
+message ServerAssignmentRequest {
+  option (diam.command) = {
+    code: 301
+    app_id: 16777265
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  optional string service_selection = 9;
+  optional uint32 context_identifier = 10;
+  optional godiam.s6a.Mip6AgentInfo mip6_agent_info = 11;
+  optional bytes visited_network_identifier = 12;
+  string user_name = 13;
+  godiam.cx.ServerAssignmentType server_assignment_type = 14;
+  repeated godiam.s6a.ActiveApn active_apn = 15;
+  optional godiam.cx.OcSupportedFeatures oc_supported_features = 16;
+  // TS 29.229 §7.2.1: M-bit set in a request
+  repeated godiam.cx.SupportedFeatures supported_features = 17 [(diam.m) = true];
+  optional godiam.s6a.TerminalInformation terminal_information = 18;
+  optional uint32 emergency_services = 19;
+}
+
+// Server-Assignment-Answer (8.2.2.3)
+//
+// < Server-Assignment-Answer > ::= < Diameter Header: 301, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { User-Name}
+//   [ Non-3GPP-User-Data ]
+//   [ 3GPP-AAA-Server-Name ]
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ] ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message ServerAssignmentAnswer {
+  option (diam.command) = {
+    code: 301
+    app_id: 16777265
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  string user_name = 9;
+  optional Non3gppUserData non3gpp_user_data = 10 [(diam.avp) = "NON_3GPP_USER_DATA"];
+  optional string tgpp_aaa_server_name = 11;
+  optional godiam.cx.OcSupportedFeatures oc_supported_features = 12;
+  optional godiam.cx.OcOlr oc_olr = 13;
+  repeated godiam.cx.Load load = 14;
+  repeated godiam.cx.SupportedFeatures supported_features = 15;
+}
+
+// Registration-Termination-Request (8.2.2.4)
+//
+// <Registration-Termination-Request> ::= < Diameter Header: 304, REQ, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   { User-Name }
+//   { Deregistration-Reason }
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message RegistrationTerminationRequest {
+  option (diam.command) = {
+    code: 304
+    app_id: 16777265
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  string user_name = 9;
+  godiam.cx.DeregistrationReason deregistration_reason = 10;
+  // TS 29.229 §7.2.1: M-bit set in a request
+  repeated godiam.cx.SupportedFeatures supported_features = 11 [(diam.m) = true];
+}
+
+// Registration-Termination-Answer (8.2.2.4)
+//
+// <Registration-Termination-Answer> ::= < Diameter Header: 304, PXY, 16777265 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   …
+//   *[ AVP ]
+message RegistrationTerminationAnswer {
+  option (diam.command) = {
+    code: 304
+    app_id: 16777265
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.cx.Drmp drmp = 2;
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  repeated godiam.cx.SupportedFeatures supported_features = 9;
+}
