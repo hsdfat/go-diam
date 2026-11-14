@@ -530,3 +530,26 @@ The text above is unchanged; these win.
   rule has no Result-Code of its own, so `Validate` does not enforce it;
   both AVPs decode into their fields and the application decides. The same
   holds for User-Identity carrying "either" one identity.
+- **S13 release, and a dictionary imported, not repeated.** S13/S13' is
+  transcribed from TS 29.272 V18.7.0, the S6a version, with V8.14.0 as the
+  Release 8 reference. Table 7.3.1/1 is one table for S6a/S6d, S7a/S7d and
+  S13/S13', with one flag rule per AVP, so the reason re-used AVPs go in the
+  application's own dictionary (another M-bit in another application) does
+  not arise: `s13.proto` has no dictionary and imports `s6a.proto`. Its six
+  AVPs resolve to the S6a entries through the import, and the generated
+  `s13` package uses `s6a.TerminalInformation`, `s6a.EquipmentStatus` and
+  `s6a.Drmp`; the generator needed no change. The interop of §8 gate 3 is
+  built from go-diameter's own S13 dictionary, like S6a, and ECR has a
+  benchmark.
+- **§5.5, one proto package per directory.** buf's STANDARD lint
+  (DIRECTORY_SAME_PACKAGE) rejects two packages in one directory, and
+  `godiam.s6a` owns `proto/3gpp/ts29272`. A second application of the same
+  specification gets a subdirectory named after its package:
+  `proto/3gpp/ts29272/s13/s13.proto`. The Go output path follows
+  `go_package` (`s13/`), so the subdirectory does not show in the module.
+- **§7, procedure rules are not grammar (S13).** Table 6.2.1.1/1 and
+  §6.2.1.2 say Terminal-Information carries IMEI and no 3GPP2-MEID on S13,
+  and table 6.2.1.1/2 makes Equipment-Status conditional on
+  DIAMETER_SUCCESS. The grammars (§7.3.3, §7.2.20) have all of these
+  optional and the rules have no Result-Code of their own, so `Validate`
+  checks the grammar only.

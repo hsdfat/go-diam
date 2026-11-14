@@ -54,9 +54,12 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
 ## Adding an application
 
 1. **Schema.** Create `proto/<body>/<spec>/<name>.proto` (for example
-   `proto/3gpp/ts29272/s6a.proto`). The file header names the specification,
-   the version transcribed and the clauses covered. Every command and grouped
-   message carries its ABNF from the specification as a leading comment.
+   `proto/3gpp/ts29272/s6a.proto`). buf allows one proto package per
+   directory, so a second application of the same specification goes in a
+   subdirectory named after it (`proto/3gpp/ts29272/s13/s13.proto`). The
+   file header names the specification, the version transcribed and the
+   clauses covered. Every command and grouped message carries its ABNF from
+   the specification as a leading comment.
    Write against the latest release; an AVP that an older supported release
    lacks or has as optional stays optional, with its history in a comment
    (3GPP: Rel-8 peers must pass `Validate`).
@@ -70,7 +73,10 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
    `IetfAvp` in `proto/3gpp/ts29272/s6a.proto`). AVPs re-used from another
    specification go in the application's own dictionary with the M-bit the
    application gives them (3GPP specs override it, e.g. TS 29.272 table
-   7.3.1/2), and the defining clause in a comment.
+   7.3.1/2), and the defining clause in a comment. An application whose
+   AVPs all sit, with the same flags, in another application's dictionary
+   from the same specification imports that file and has no dictionary of
+   its own (S13/S13' imports `s6a.proto`).
 3. **Generate** with `make generate` and commit the output.
 4. **Pass the gates.** An application is listed as *verified* only when all
    of these hold:
