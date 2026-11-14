@@ -26,11 +26,12 @@ b, err := ulr.Marshal()
 > today: the runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`), the
 > RFC 6733 base protocol (`base`), S6a/S6d and S13/S13' from TS 29.272
 > (`s6a`, `s13`), Cx/Dx from TS 29.229 (`cx`), Sh/Dh from TS 29.329
-> (`sh`) and SLh from TS 29.173 (`slh`), each tested in both directions
-> against fiorix/go-diameter (for Cx, Sh and SLh, which go-diameter has no
-> dictionary for, AVP by AVP; see [Coverage](#coverage)). Captures from freeDiameter are committed for three
+> (`sh`), SLh from TS 29.173 (`slh`) and Zh from TS 29.109 (`zh`), each
+> tested in both directions against fiorix/go-diameter (for Cx, Sh, SLh and
+> Zh, which go-diameter has no dictionary for, AVP by AVP; see
+> [Coverage](#coverage)). Captures from freeDiameter are committed for three
 > of the six base command pairs (CEA, DWA, DPA) and none for the 3GPP
-> applications, so all six are still *spec-only*. The API may still change before `v1.0.0`.
+> applications, so all seven are still *spec-only*. The API may still change before `v1.0.0`.
 
 The same with the base protocol:
 
@@ -106,8 +107,8 @@ go get github.com/hsdfat/go-diam
 Packages: `github.com/hsdfat/go-diam/diam` (runtime) and one generated
 package per application, today `github.com/hsdfat/go-diam/base`,
 `github.com/hsdfat/go-diam/s6a`, `github.com/hsdfat/go-diam/s13`,
-`github.com/hsdfat/go-diam/cx`, `github.com/hsdfat/go-diam/sh` and
-`github.com/hsdfat/go-diam/slh`. Generated
+`github.com/hsdfat/go-diam/cx`, `github.com/hsdfat/go-diam/sh`,
+`github.com/hsdfat/go-diam/slh` and `github.com/hsdfat/go-diam/zh`. Generated
 code is committed in the repository. You only need the generator if you
 [define your own application](#defining-your-own-application).
 
@@ -264,7 +265,7 @@ The two libraries make different trade-offs and can be used together.
 | Grammar checks | Generated `Validate()` returning the Result-Code and Failed-AVP | Rules are parsed from the dictionary XML but not enforced on messages; the application checks |
 | Unknown AVPs | Kept and re-encoded verbatim. M-bit ones reported as 5001 | Kept in the AVP tree as `datatype.Unknown` |
 | Runtime dependencies | Standard library only | grpc, glog, protobuf, sctp |
-| 3GPP interfaces included | Planned: all (see [Coverage](#coverage)) | Base, Credit-Control, Gx, Gy/Ro/Rf, Rx, Sy, S6a, S13, SWx, NASREQ. Cx/Dx, Sh/Dh and SLh are not included |
+| 3GPP interfaces included | Planned: all (see [Coverage](#coverage)) | Base, Credit-Control, Gx, Gy/Ro/Rf, Rx, Sy, S6a, S13, SWx, NASREQ. Cx/Dx, Sh/Dh, SLh and Zh are not included |
 | Maturity | Pre-release | Mature, many users |
 
 **Choose go-diameter** if you want a complete stack with connections, peer
@@ -352,7 +353,7 @@ Statuses:
 | S6t | TS 29.336 | 1 | planned |
 | S6m/S6c | TS 29.336 / 29.338 | 1 | planned |
 | SLh (RIR/RIA) | TS 29.173 V18.0.0 | 1 | spec-only: both commands byte-identical with go-diameter in both directions, Serving-Node and Additional-Serving-Node with every member, an ABSENT_USER (4201) answer, fuzzed. go-diameter has no SLh application: its side is built from the SLh AVPs it defines under Ro/Rf, S6a and SWx (Serving-Node, MME-Name, MME-Realm, GMLC-Address, MSISDN, SGSN-Number, GMLC-Number, 3GPP-AAA-Server-Name, Supported-Features), and decodes each AVP in the application that defines it; the 8 AVPs it defines nowhere (LMSI, MSC-Number, LCS-Capabilities-Sets, Additional-Serving-Node, PPR-Address, SGSN-Name, SGSN-Realm, RIA-Flags) carry codes and flags restated from the spec in the test. `slh.proto` imports the S6a schema for MSISDN, SGSN-Number, GMLC-Number and Supported-Features (6 S6a entries, all cross-checked) and has 13 entries of its own: 5 cross-checked against go-diameter with no disagreement, the 8 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode SLh as opaque AVPs); no peer capture yet |
-| Zh | TS 29.109 | 1 | planned |
+| Zh (MAR/MAA) | TS 29.109 V18.1.0 | 1 | spec-only: both commands byte-identical with go-diameter in both directions, an AKA and a SIP Digest answer and an IDENTITY_UNKNOWN (5401) answer, fuzzed. go-diameter has no Zh application and none of the GAA AVPs: its side is built from SIP-Auth-Data-Item and its AKA members (SWx) and the base protocol, and decodes each AVP in the application that defines it; the 9 AVPs it defines nowhere (GBA-UserSecSettings, GUSS-Timestamp, SHA-256-Indication, Public-Identity, SIP-Digest-Authenticate and the 4 Digest-\* AVPs) carry codes and flags restated from the spec in the test. `zh.proto` imports the Cx schema for Public-Identity and SIP-Auth-Data-Item (TS 29.109 §6.3: used as they are) and has 3 entries of its own, none in go-diameter, all 3 listed in `internal/interop/testdata/dictcheck-absent.txt`, so 0 of 3 cross-checked; Zn and Zpn are not included; no benchmark; no peer capture yet |
 | Credit-Control | RFC 8506 | 2 | prototype (CCR/CCA) |
 | Gx | TS 29.212 | 2 | planned |
 | Rx | TS 29.214 | 2 | planned |
@@ -390,7 +391,7 @@ evidence:
 3. **Interop.** Each command is built once with go-diameter and once with
    go-diam; the bytes must be identical, and each library must decode and
    re-encode the other's output. Where go-diameter has no dictionary for an
-   application (Cx/Dx, Sh/Dh, SLh), it decodes each AVP with its definition from
+   application (Cx/Dx, Sh/Dh, SLh, Zh), it decodes each AVP with its definition from
    whichever of its applications has one, and the AVPs it defines nowhere
    are listed in the test with their code and flags restated from the
    specification.

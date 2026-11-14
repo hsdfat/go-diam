@@ -578,3 +578,27 @@ The text above is unchanged; these win.
   after Origin-Realm to DIAMETER_SUCCESS. The grammars have all of them
   optional and the rules have no Result-Code of their own, so `Validate`
   checks the grammar only.
+- **Zh release, and a command that re-uses a Cx code.** Zh is transcribed
+  from TS 29.109 V18.1.0, the latest Release 18 version, with V8.9.0 as the
+  Release 8 reference (its MAA lacks SHA-256-Indication). Zh re-uses the
+  Cx command code 303 but not the Cx grammar (§7.3); the commands are
+  `zh.MultimediaAuthRequest/Answer` under application 16777221, which the
+  registry keeps apart from `cx`'s by application id. §6.3 uses the Cx
+  AVPs "as they are", so `zh.proto` imports `cx.proto` for
+  Public-Identity and SIP-Auth-Data-Item and has its own dictionary only
+  for the three rows of table 6.1 that Zh carries. Table 6.1 is shared
+  with Zn and Zpn, whose rows wait for those applications. The interop of
+  §8 gate 3 is built AVP by AVP (`zhRestated` in
+  `internal/interop/zh_test.go`); none of Zh's own entries is in
+  go-diameter, so the dictionary cross-check covers only the imported Cx
+  entries. No benchmark.
+- **§5.2, an answer grammar without Failed-AVP (Zh).** The Zh MAA (§4.2
+  step 3) lists no Failed-AVP. It is transcribed as written, so a
+  Failed-AVP in a Zh MAA is an AVP the command does not define and, having
+  the M-bit, fails `Validate` with 5001. A receiver that wants to read one
+  takes it from `Unknown`.
+- **§7, procedure rules are not grammar (Zh).** §4.2 wants User-Name or
+  Public-Identity in a request (only User-Name outside push) and both in
+  the answer to a request with Public-Identity. The grammars have both
+  optional and the rules have no Result-Code, so `Validate` checks the
+  grammar only.
