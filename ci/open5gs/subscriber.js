@@ -37,7 +37,7 @@ db.subscribers.insertOne({
     op: null,
     opc: "5557cf61c0e6d150f973cf5bed058819",
     amf: "8000",
-    sqn: NumberLong(64),
+    sqn: NumberLong("64"),
   },
   ambr: {
     downlink: { value: NumberInt(1000000000), unit: NumberInt(0) },

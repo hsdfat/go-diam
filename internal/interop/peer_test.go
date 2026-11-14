@@ -77,7 +77,8 @@ func (p *peerConn) sessionID() string {
 	return fmt.Sprintf("%s;%d;%d", p.host, time.Now().Unix(), p.id+1)
 }
 
-func (p *peerConn) send(m diam.Message) {
+// send writes m and returns its command code.
+func (p *peerConn) send(m diam.Message) uint32 {
 	p.t.Helper()
 	b, err := m.AppendMarshal(nil)
 	if err != nil {
@@ -86,6 +87,11 @@ func (p *peerConn) send(m diam.Message) {
 	if _, err := p.conn.Write(b); err != nil {
 		p.t.Fatal(err)
 	}
+	h, _, err := diam.ParseHeader(b)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	return h.CommandCode
 }
 
 // answer reads frames until the answer to the given command arrives. A DWR
@@ -123,8 +129,7 @@ func (p *peerConn) answer(code uint32) []byte {
 // the decoded answer, or nil after reporting an error.
 func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
 	p.t.Helper()
-	p.send(req)
-	frame := p.answer(req.DiamHeader().CommandCode)
+	frame := p.answer(p.send(req))
 	p.t.Logf("%s: %d bytes: %x", name, len(frame), frame)
 	if *update {
 		if err := os.WriteFile(filepath.Join(p.dir, name+".bin"), frame, 0o644); err != nil {

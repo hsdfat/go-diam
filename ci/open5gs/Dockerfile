@@ -23,7 +23,8 @@ RUN git clone --depth 1 --branch "$OPEN5GS_TAG" https://github.com/open5gs/open5
  && find /open5gs -name 'dict_*.fdx' -o -name 'dbg_msg_dumps.fdx' -o -name open5gs-hssd \
  && rm -rf /src
 
-ENV LD_LIBRARY_PATH=/open5gs/lib
+# The prometheus-client-c subproject installs under the multiarch libdir.
+ENV LD_LIBRARY_PATH=/open5gs/lib:/open5gs/lib/x86_64-linux-gnu
 
 # freeDiameter refuses to start without TLS credentials, even when every
 # connection is plain TCP. A throwaway self-signed certificate is enough.
