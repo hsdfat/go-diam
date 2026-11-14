@@ -1,0 +1,1562 @@
+// S6t: SCEF - HSS (Diameter application 16777345).
+//
+// Source: 3GPP TS 29.336 V18.2.0 (Release 18), published as
+// ETSI TS 129 336 V18.2.0 (2024-05); the latest Release 18 version.
+//   Commands:      §8.2.2 table 8.2.2-1, §8.2.3-8.2.8 (CIR/CIA, RIR/RIA,
+//                  NIR/NIA)
+//   Application:   §8.1.8 (16777345, vendor 3GPP)
+//   AVP tables:    §8.4.1 table 8.4.1-1, all rows, and table 8.4.1-2 (the
+//                  re-used AVPs and their S6t M-bit)
+//   Grouped AVPs:  §8.4.2-8.4.85, every grammar reachable from the commands
+//   Result codes:  §8.3.3 (5510-5514, 5516, and 5451 from TS 29.272)
+//
+// AVPs that TS 29.336 re-uses (table 8.4.1-2) are in this file's
+// dictionaries too, as in S6a, Cx and Sh. Where table 8.4.1-2 gives an
+// M-bit ("Must not set"), that value is the one here; where its M-bit
+// column is empty, the defining specification's flag rule applies:
+//   TS 29.336 §6.4.2, 6.4.11 table 6.4.1/1   User-Identifier,
+//                                      External-Identifier (M, V); the S6t
+//                                      form of User-Identifier is §8.4.36
+//   TS 29.329 V18.0.0 table 6.3.1      MSISDN (M, V)
+//   TS 29.229 V18.1.0 §6.3.29-6.3.31   Supported-Features, Feature-List-ID,
+//                                      Feature-List (M "May")
+//   TS 29.272 V18.7.0 table 7.3.1/1    Visited-PLMN-Id, EPS-, MME- and
+//                                      SGSN-Location-Information and their
+//                                      members, Terminal-Information and its
+//                                      members, IMSI-Group-Id and its
+//                                      members, PDN-Type, Non-IP-*, CSG-Id,
+//                                      Subscribed-Periodic-RAU-TAU-Timer,
+//                                      DL-Buffering-Suggested-Packet-Count,
+//                                      eDRX-Cycle-Length and its value
+//   TS 32.299 V18.0.0 §7.2             Charged-Party, User-CSG-Information,
+//                                      CSG-Access-Mode,
+//                                      CSG-Membership-Indication,
+//                                      Served-Party-IP-Address (V, M)
+//   TS 29.212 V18.2.0 §5.3.31          RAT-Type (V), inside
+//                                      eDRX-Cycle-Length
+//   TS 29.217 V18.0.0 table 5.3.1      eNodeB-ID (V, M), Extended-eNodeB-ID
+//   TS 29.338 V18.2.0 §5.3.3.22        Maximum-UE-Availability-Time (V)
+//   TS 29.128 V18.0.0 §6.4.32-6.4.35   Idle-Status-Indication,
+//                                      Idle-Status-Timestamp, Active-Time,
+//                                      Reachability-Cause
+//   TS 29.154 V18.0.0 §5.3.10          Number-of-UEs (code 4209)
+//   RFC 5777 §4.2.5-4.2.7              Time-Of-Day-Start, Time-Of-Day-End,
+//                                      Day-Of-Week-Mask
+//   RFC 5778 §6.2                      Service-Selection (M)
+//   RFC 7683 §7.1-7.7                  OC-Supported-Features, OC-OLR and
+//                                      their AVPs
+//   RFC 7944 §9.1                      DRMP
+//   RFC 8583 §7.1-7.4                  Load and its AVPs
+// Base protocol AVPs come from ietf/rfc6733/base.proto. Grouped AVPs
+// defined elsewhere carry their grammar from that specification, except
+// EPS-, MME- and SGSN-Location-Information and User-Identifier, for which
+// TS 29.336 gives its own S6t grammar (§8.4.21, 8.4.34-8.4.36).
+//
+// Release compatibility (design §5.3a): S6t first appears in Release 13.
+// Every AVP that is required here is also required in TS 29.336 V13.2.0
+// (ETSI TS 129 336 V13.2.0, the earliest Release 13 version ETSI publishes),
+// or sits in a grouped AVP or command that Release 13 does not have (NIR,
+// NIA). Release 13 differs in ways that stay compatible:
+//   - Reference-ID-Validity-Time (3148) is called Validity-Time there; same
+//     code, type and flags.
+//   - Release 13 MME- and SGSN-Location-Information also list
+//     Geographical-Information and Geodetic-Information. Their M-bit is
+//     clear (TS 29.272), so a Release 13 peer's copies stay in Unknown
+//     without an error.
+//   - Two AVPs with the M-bit set were dropped after Release 13: the
+//     *[ Failed-AVP ] of RIR and the [ Service-Result ] that
+//     Monitoring-Event-Config-Status had before Service-Report replaced
+//     it. A Release 13 message carrying them would otherwise fail with
+//     5001, so both are kept at their Release 13 position as optional
+//     ([ Failed-AVP ] before Proxy-Info), as Cx RTR keeps Destination-Host
+//     (design §13).
+//   - Release 13 answers carry *[ Failed-AVP ]; [ Failed-AVP ] from the
+//     current release is used, as in S6a.
+//
+// Rulings where the specification text needs reading:
+//   - RIR: the header in §8.2.5 reads "8388719, PXY" and the prose says
+//     the R-bit is cleared, the same as RIA. RIR is the request of the pair
+//     (table 8.2.2-1, "is sent from the HSS to the SCEF"), so it is
+//     generated with the R-bit set.
+//   - Vendor-Specific-Application-Id: §8.2.2 NOTE says it "is included as
+//     an optional AVP in all Command Code Format specifications" and that a
+//     receiver ignores it, but no S6t ABNF lists it. It has the M-bit set,
+//     so leaving it out would turn "ignore" into 5001. Every command carries
+//     it as [ Vendor-Specific-Application-Id ] after DRMP, where S6a has it.
+//   - Include-Identifiers: §8.4.85 heads its ABNF "AVP header: xxxx";
+//     table 8.4.1-1 gives 3189, which is used.
+//   - Supported-Features M-bit: table 8.4.1-2 gives none; §8.1.9 applies
+//     TS 29.229 §7.2, whose §7.2.1 sets it in requests and clears it in
+//     answers. The dictionary has it clear and every request sets
+//     (diam.m) = true, as in Cx and Sh.
+//   - Table spellings "Maximum Latency", "Maximum Response Time",
+//     "Periodic-time" and the clause title "Stationary indication" are the
+//     AVPs Maximum-Latency, Maximum-Response-Time, Periodic-Time and
+//     Stationary-Indication of the ABNFs. AdditionalIdentifiers keeps its
+//     spelling (ADDITIONALIDENTIFIERS); its fields use (diam.avp).
+//   - Unsigned32 AVPs with named values (Monitoring-Type, Accuracy,
+//     Node-Type, ...) are uint32 fields: the type is the table's, the values
+//     are listed next to the dictionary entry.
+//   - "At least one of SCEF-Reference-ID or SCEF-Reference-ID-for-Deletion
+//     shall be present" (§8.4.2, 8.4.25, 8.4.80), the one-identity rule of
+//     User-Identifier (§8.4.36) and the PDN-Type / Non-IP rules of
+//     PDN-Connectivity-Status-Report (§8.4.77) are procedure rules without a
+//     Result-Code of their own; Validate checks the grammar only.
+//   - CIR and CIA list [ Suggested-Network-Configuration ] after
+//     *[ Route-Record ]; the order is kept.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.s6t;
+
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/s6t";
+
+// Avp is the S6t dictionary of 3GPP AVPs (vendor 10415): table 8.4.1-1,
+// then the re-used 3GPP AVPs of table 8.4.1-2 and the AVPs inside their
+// grammars. The M-bit is set where the flag rules say "Must"; "May" is left
+// clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // TS 29.229 §6.3.29; table 8.4.1-2: no M-bit, §8.1.9 sets it per message (see the requests)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.229 §6.3.30
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.229 §6.3.31; bits for S6t in table 8.4.23-1
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.329 §6.3.2 (M, V)
+  MSISDN = 701 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 32.299 §7.2; table 8.4.1-2: Must not set
+  SERVED_PARTY_IP_ADDRESS = 848 [(diam.def) = {vendor: 10415, type: ADDRESS}];
+  // TS 32.299 §7.2 (V, M)
+  CHARGED_PARTY = 857 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  // TS 29.212 §5.3.31 (V), inside eDRX-Cycle-Length
+  RAT_TYPE = 1032 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 29.272 §7.3.3; table 8.4.1-2: Must not set
+  TERMINAL_INFORMATION = 1401 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.4 (M, V)
+  IMEI = 1402 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  // TS 29.272 §7.3.5 (M, V)
+  SOFTWARE_VERSION = 1403 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  // TS 29.272 §7.3.9 (M, V)
+  VISITED_PLMN_ID = 1407 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.79 (M, V)
+  CSG_ID = 1437 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // TS 29.272 §7.3.62; table 8.4.1-2: Must not set
+  PDN_TYPE = 1456 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 29.272 §7.3.6 (M, V)
+  TGPP2_MEID = 1471 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.111; S6t grammar §8.4.21
+  EPS_LOCATION_INFORMATION = 1496 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.115; S6t grammar §8.4.34
+  MME_LOCATION_INFORMATION = 1600 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.116; S6t grammar §8.4.35
+  SGSN_LOCATION_INFORMATION = 1601 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.117
+  E_UTRAN_CELL_GLOBAL_IDENTITY = 1602 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.118
+  TRACKING_AREA_IDENTITY = 1603 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.119
+  CELL_GLOBAL_IDENTITY = 1604 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.120
+  ROUTING_AREA_IDENTITY = 1605 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.122
+  SERVICE_AREA_IDENTITY = 1607 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.125
+  CURRENT_LOCATION_RETRIEVED = 1610 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 29.272 §7.3.126
+  AGE_OF_LOCATION_INFORMATION = 1611 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.272 §7.3.134; table 8.4.1-2: Must not set
+  SUBSCRIBED_PERIODIC_RAU_TAU_TIMER = 1619 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.272 §7.3.188; table 8.4.1-2: Must not set
+  DL_BUFFERING_SUGGESTED_PACKET_COUNT = 1674 [(diam.def) = {vendor: 10415, type: INTEGER32}];
+  // TS 29.272 §7.3.189; table 8.4.1-2: Must not set
+  IMSI_GROUP_ID = 1675 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.190
+  GROUP_SERVICE_ID = 1676 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.272 §7.3.191
+  GROUP_PLMN_ID = 1677 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.192
+  LOCAL_GROUP_ID = 1678 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.272 §7.3.204; table 8.4.1-2: Must not set
+  NON_IP_PDN_TYPE_INDICATOR = 1681 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  // TS 29.272 §7.3.205; table 8.4.1-2: Must not set
+  NON_IP_DATA_DELIVERY_MECHANISM = 1682 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.272 §7.3.215
+  EDRX_CYCLE_LENGTH = 1691 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.272 §7.3.216
+  EDRX_CYCLE_LENGTH_VALUE = 1692 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 32.299 §7.2.46A (V, M)
+  CSG_ACCESS_MODE = 2317 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 32.299 §7.2.46B (V, M)
+  CSG_MEMBERSHIP_INDICATION = 2318 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 32.299 §7.2.240A (V, M)
+  USER_CSG_INFORMATION = 2319 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §6.4.2, table 6.4.1/1 (M, V); S6t grammar §8.4.36
+  USER_IDENTIFIER = 3102 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §6.4.11, table 6.4.1/1 (M, V)
+  EXTERNAL_IDENTIFIER = 3111 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  AESE_COMMUNICATION_PATTERN = 3113 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  COMMUNICATION_PATTERN_SET = 3114 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.4.27: PERIODICALLY (0), ON_DEMAND (1)
+  PERIODIC_COMMUNICATION_INDICATOR = 3115 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  COMMUNICATION_DURATION_TIME = 3116 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // table 8.4.1-1 spells it Periodic-time
+  PERIODIC_TIME = 3117 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SCHEDULED_COMMUNICATION_TIME = 3118 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.4.31: STATIONARY_UE (0), MOBILE_UE (1)
+  STATIONARY_INDICATION = 3119 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  AESE_COMMUNICATION_PATTERN_CONFIG_STATUS = 3120 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  AESE_ERROR_REPORT = 3121 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MONITORING_EVENT_CONFIGURATION = 3122 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MONITORING_EVENT_REPORT = 3123 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SCEF_REFERENCE_ID = 3124 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SCEF_ID = 3125 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  SCEF_REFERENCE_ID_FOR_DELETION = 3126 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.7: LOSS_OF_CONNECTIVITY (0), UE_REACHABILITY (1),
+  // LOCATION_REPORTING (2), CHANGE_OF_IMSI_IMEI(SV)_ASSOCIATION (3),
+  // ROAMING_STATUS (4), COMMUNICATION_FAILURE (5),
+  // AVAILABILITY_AFTER_DDN_FAILURE (6),
+  // NUMBER_OF_UES_PRESENT_IN_A_GEOGRAPHICAL_AREA (7),
+  // UE_REACHABILITY_AND_IDLE_STATUS_INDICATION (8),
+  // AVAILABILITY_AFTER_DDN_FAILURE_AND_IDLE_STATUS_INDICATION (9),
+  // PDN_CONNECTIVITY_STATUS (10)
+  MONITORING_TYPE = 3127 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MAXIMUM_NUMBER_OF_REPORTS = 3128 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  UE_REACHABILITY_CONFIGURATION = 3129 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MONITORING_DURATION = 3130 [(diam.def) = {vendor: 10415, m: true, type: TIME}];
+  MAXIMUM_DETECTION_TIME = 3131 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.12, table 8.4.12-1: bit 0 Reachability for SMS, bit 1 for Data
+  REACHABILITY_TYPE = 3132 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // table 8.4.1-1 spells it "Maximum Latency"
+  MAXIMUM_LATENCY = 3133 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // table 8.4.1-1 spells it "Maximum Response Time"
+  MAXIMUM_RESPONSE_TIME = 3134 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  LOCATION_INFORMATION_CONFIGURATION = 3135 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.4.16: CURRENT_LOCATION (0), LAST_KNOWN_LOCATION (1)
+  MONTE_LOCATION_TYPE = 3136 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.17: CGI-ECGI (0), eNB (1), LA-TA-RA (2), PRA (3), PLMN-ID (4)
+  ACCURACY = 3137 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.18: IMEI-CHANGE (0), IMEISV-CHANGE (1)
+  ASSOCIATION_TYPE = 3138 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.19: SUBSCRIBER_ROAMING (0), SUBSCRIBER_NOT_ROAMING (1)
+  ROAMING_INFORMATION = 3139 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.20: REACHABLE_FOR_SMS (0), REACHABLE_FOR_DATA (1)
+  REACHABILITY_INFORMATION = 3140 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.22, table 8.4.22-1: bit 0 IMEI, bit 1 IMEISV
+  IMEI_CHANGE = 3141 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MONITORING_EVENT_CONFIG_STATUS = 3142 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SUPPORTED_SERVICES = 3143 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.4.41, table 8.4.41-1 (bits 0-8)
+  SUPPORTED_MONITORING_EVENTS = 3144 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED64}];
+  // §8.4.39, table 8.4.39-1 (bits 0-4)
+  CIR_FLAGS = 3145 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SERVICE_RESULT = 3146 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SERVICE_RESULT_CODE = 3147 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // Release 13 calls it Validity-Time
+  REFERENCE_ID_VALIDITY_TIME = 3148 [(diam.def) = {vendor: 10415, m: true, type: TIME}];
+  // §8.4.43: SUSPEND (0), RESUME (1), CANCEL (2)
+  EVENT_HANDLING = 3149 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  NIDD_AUTHORIZATION_REQUEST = 3150 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  NIDD_AUTHORIZATION_RESPONSE = 3151 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SERVICE_REPORT = 3152 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §8.4.48: HSS (0), MME (1), SGSN (2)
+  NODE_TYPE = 3153 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §8.4.50, table 8.4.50-1: bit 0 Absent Subscriber, bit 1 Group Event
+  // Monitoring Partially Cancel
+  S6T_HSS_CAUSE = 3154 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  ENHANCED_COVERAGE_RESTRICTION = 3155 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ENHANCED_COVERAGE_RESTRICTION_DATA = 3156 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  RESTRICTED_PLMN_LIST = 3157 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  ALLOWED_PLMN_LIST = 3158 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  REQUESTED_VALIDITY_TIME = 3159 [(diam.def) = {vendor: 10415, type: TIME}];
+  GRANTED_VALIDITY_TIME = 3160 [(diam.def) = {vendor: 10415, type: TIME}];
+  NIDD_AUTHORIZATION_UPDATE = 3161 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.58: UE_DETACHED_MME (0), UE_DETACHED_SGSN (1),
+  // MAX_DETECTION_TIME_EXPIRED_MME (2), MAX_DETECTION_TIME_EXPIRED_SGSN (3),
+  // UE_PURGED_MME (4), UE_PURGED_SGSN (5)
+  LOSS_OF_CONNECTIVITY_REASON = 3162 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  GROUP_REPORTING_GUARD_TIMER = 3163 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §8.4.60, table 8.4.60-1: bit 0 Group-Configuration-In-Progress
+  CIA_FLAGS = 3164 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  GROUP_REPORT = 3165 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  GROUP_REPORT_ITEM = 3166 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.63, table 8.4.63-1 (bits 0-4)
+  RIR_FLAGS = 3167 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §8.4.64: EXTERNAL-UE-IDENTIFIER-TYPE (0), EXTERNAL-GROUP-IDENTIFIER-TYPE (1)
+  TYPE_OF_EXTERNAL_IDENTIFIER = 3168 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  APN_VALIDITY_TIME = 3169 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SUGGESTED_NETWORK_CONFIGURATION = 3170 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MONITORING_EVENT_REPORT_STATUS = 3171 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PLMN_ID_REQUESTED = 3172 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  ADDITIONALIDENTIFIERS = 3173 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.70, table 8.4.70-1: bit 0 Incomplete Group-User-Identifier-List
+  NIR_FLAGS = 3174 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  REPORTING_TIME_STAMP = 3175 [(diam.def) = {vendor: 10415, type: TIME}];
+  // §8.4.72, table 8.4.72-1: bit 0 Incomplete Group-User-Identifier-List
+  NIA_FLAGS = 3176 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  GROUP_USER_IDENTIFIER = 3177 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MTC_PROVIDER_INFO = 3178 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  MTC_PROVIDER_ID = 3179 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  PDN_CONNECTIVITY_STATUS_CONFIGURATION = 3180 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  PDN_CONNECTIVITY_STATUS_REPORT = 3181 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.78: CREATED (0), DELETED (1)
+  PDN_CONNECTIVITY_STATUS_TYPE = 3182 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §8.4.79: SINGLE_TRANSMISSION_UL (0), SINGLE_TRANSMISSION_DL (1),
+  // DUAL_TRANSMISSION_UL_WITH_SUBSEQUENT_DL (2),
+  // DUAL_TRANSMISSION_DL_WITH_SUBSEQUENT_UL (3), MULTI_TRANSMISSION (4)
+  TRAFFIC_PROFILE = 3183 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  UPDATED_NETWORK_CONFIGURATION = 3184 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.81, table 8.4.81-1 (bits 0-2)
+  BATTERY_INDICATOR = 3185 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SCEF_REFERENCE_ID_EXT = 3186 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  SCEF_REFERENCE_ID_FOR_DELETION_EXT = 3187 [(diam.def) = {vendor: 10415, type: UNSIGNED64}];
+  EXCLUDE_IDENTIFIERS = 3188 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §8.4.85 heads its ABNF "AVP header: xxxx"; table 8.4.1-1 gives 3189
+  INCLUDE_IDENTIFIERS = 3189 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.338 §5.3.3.22, table 5.3.3.1 (V)
+  MAXIMUM_UE_AVAILABILITY_TIME = 3329 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.217 §5.3.10 (spelt eNodeB-Id there), table 5.3.1 (V, M)
+  ENODEB_ID = 4008 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.217 §5.3.15 (spelt Extended-eNodeB-Id there); table 8.4.1-2: Must not set
+  EXTENDED_ENODEB_ID = 4013 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.154 §5.3.10 (spelt Number-Of-UEs there); table 8.4.1-2: Must not set
+  NUMBER_OF_UES = 4209 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.128 §6.4.32; table 8.4.1-2: Must not set
+  IDLE_STATUS_INDICATION = 4322 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.128 §6.4.33
+  IDLE_STATUS_TIMESTAMP = 4323 [(diam.def) = {vendor: 10415, type: TIME}];
+  // TS 29.128 §6.4.34; table 8.4.1-2: Must not set
+  ACTIVE_TIME = 4324 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.128 §6.4.35; table 8.4.1-2: Must not set
+  REACHABILITY_CAUSE = 4325 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+}
+
+// IetfAvp holds the re-used IETF AVPs (no Vendor-Id), a separate dictionary
+// as in S6a and Sh.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 7944 §9.1; table 8.4.1-2: Must not set
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+  // RFC 5778 §6.2 (M)
+  SERVICE_SELECTION = 493 [(diam.def) = {m: true, type: UTF8_STRING}];
+  // RFC 5777 §4.2.5; no flag rule there or in table 8.4.1-2, sent with M clear as in S6a
+  TIME_OF_DAY_START = 561 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 5777 §4.2.6; as Time-Of-Day-Start
+  TIME_OF_DAY_END = 562 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 5777 §4.2.7; as Time-Of-Day-Start
+  DAY_OF_WEEK_MASK = 563 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.1; table 8.4.1-2: Must not set
+  OC_SUPPORTED_FEATURES = 621 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.2
+  OC_FEATURE_VECTOR = 622 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.3; table 8.4.1-2: Must not set
+  OC_OLR = 623 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.4
+  OC_SEQUENCE_NUMBER = 624 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.5
+  OC_VALIDITY_DURATION = 625 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.6
+  OC_REPORT_TYPE = 626 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.7
+  OC_REDUCTION_PERCENTAGE = 627 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 8583 §7.4
+  SOURCEID = 649 [(diam.def) = {type: DIAMETER_IDENTITY}];
+  // RFC 8583 §7.1; table 8.4.1-2: Must not set
+  LOAD = 650 [(diam.def) = {type: GROUPED}];
+  // RFC 8583 §7.2
+  LOAD_TYPE = 651 [(diam.def) = {type: ENUMERATED}];
+  // RFC 8583 §7.3
+  LOAD_VALUE = 652 [(diam.def) = {type: UNSIGNED64}];
+}
+
+// PLMN-ID-Requested (§8.4.68). Absent means TRUE.
+enum PlmnIdRequested {
+  PLMN_ID_REQUESTED_TRUE = 0;
+  PLMN_ID_REQUESTED_FALSE = 1;
+}
+
+// PDN-Type (TS 29.272 §7.3.62).
+enum PdnType {
+  PDN_TYPE_IPV4 = 0;
+  PDN_TYPE_IPV6 = 1;
+  PDN_TYPE_IPV4V6 = 2;
+  PDN_TYPE_IPV4_OR_IPV6 = 3;
+}
+
+// Non-IP-PDN-Type-Indicator (TS 29.272 §7.3.204).
+enum NonIpPdnTypeIndicator {
+  NON_IP_PDN_TYPE_INDICATOR_FALSE = 0;
+  NON_IP_PDN_TYPE_INDICATOR_TRUE = 1;
+}
+
+// Current-Location-Retrieved (TS 29.272 §7.3.125).
+enum CurrentLocationRetrieved {
+  CURRENT_LOCATION_RETRIEVED_ACTIVE_LOCATION_RETRIEVAL = 0;
+}
+
+// CSG-Access-Mode (TS 32.299 §7.2.46A).
+enum CsgAccessMode {
+  CSG_ACCESS_MODE_CLOSED_MODE = 0;
+  CSG_ACCESS_MODE_HYBRID_MODE = 1;
+}
+
+// CSG-Membership-Indication (TS 32.299 §7.2.46B).
+enum CsgMembershipIndication {
+  CSG_MEMBERSHIP_INDICATION_NOT_CSG_MEMBER = 0;
+  CSG_MEMBERSHIP_INDICATION_CSG_MEMBER = 1;
+}
+
+// RAT-Type (TS 29.212 §5.3.31).
+enum RatType {
+  RAT_TYPE_WLAN = 0;
+  RAT_TYPE_VIRTUAL = 1;
+  RAT_TYPE_TRUSTED_N3GA = 2;
+  RAT_TYPE_WIRELINE = 3;
+  RAT_TYPE_WIRELINE_CABLE = 4;
+  RAT_TYPE_WIRELINE_BBF = 5;
+  RAT_TYPE_UTRAN = 1000;
+  RAT_TYPE_GERAN = 1001;
+  RAT_TYPE_GAN = 1002;
+  RAT_TYPE_HSPA_EVOLUTION = 1003;
+  RAT_TYPE_EUTRAN = 1004;
+  RAT_TYPE_EUTRAN_NB_IOT = 1005;
+  RAT_TYPE_NR = 1006;
+  RAT_TYPE_LTE_M = 1007;
+  RAT_TYPE_NR_U = 1008;
+  RAT_TYPE_EUTRAN_LEO = 1011;
+  RAT_TYPE_EUTRAN_MEO = 1012;
+  RAT_TYPE_EUTRAN_GEO = 1013;
+  RAT_TYPE_EUTRAN_OTHERSAT = 1014;
+}
+
+// DRMP (RFC 7944 §9.1).
+enum Drmp {
+  DRMP_PRIORITY_0 = 0;
+  DRMP_PRIORITY_1 = 1;
+  DRMP_PRIORITY_2 = 2;
+  DRMP_PRIORITY_3 = 3;
+  DRMP_PRIORITY_4 = 4;
+  DRMP_PRIORITY_5 = 5;
+  DRMP_PRIORITY_6 = 6;
+  DRMP_PRIORITY_7 = 7;
+  DRMP_PRIORITY_8 = 8;
+  DRMP_PRIORITY_9 = 9;
+  DRMP_PRIORITY_10 = 10;
+  DRMP_PRIORITY_11 = 11;
+  DRMP_PRIORITY_12 = 12;
+  DRMP_PRIORITY_13 = 13;
+  DRMP_PRIORITY_14 = 14;
+  DRMP_PRIORITY_15 = 15;
+}
+
+// OC-Report-Type (RFC 7683 §7.6).
+enum OcReportType {
+  OC_REPORT_TYPE_HOST_REPORT = 0;
+  OC_REPORT_TYPE_REALM_REPORT = 1;
+}
+
+// Load-Type (RFC 8583 §7.2).
+enum LoadType {
+  LOAD_TYPE_HOST = 0;
+  LOAD_TYPE_PEER = 1;
+}
+
+// OC-Supported-Features (RFC 7683 §7.1)
+//
+// OC-Supported-Features ::= < AVP Header: 621 >
+//   [ OC-Feature-Vector ]
+//   *[ AVP ]
+message OcSupportedFeatures {
+  option (diam.extensible) = true;
+  optional uint64 oc_feature_vector = 1;
+}
+
+// OC-OLR (RFC 7683 §7.3)
+//
+// OC-OLR ::= < AVP Header: 623 >
+//   < OC-Sequence-Number >
+//   < OC-Report-Type >
+//   [ OC-Reduction-Percentage ]
+//   [ OC-Validity-Duration ]
+//   *[ AVP ]
+message OcOlr {
+  option (diam.extensible) = true;
+  uint64 oc_sequence_number = 1 [(diam.fixed) = true];
+  OcReportType oc_report_type = 2 [(diam.fixed) = true];
+  optional uint32 oc_reduction_percentage = 3;
+  optional uint32 oc_validity_duration = 4;
+}
+
+// Load (RFC 8583 §7.1)
+//
+// Load ::= < AVP Header: 650 >
+//   [ Load-Type ]
+//   [ Load-Value ]
+//   [ SourceID ]
+//   *[ AVP ]
+message Load {
+  option (diam.extensible) = true;
+  optional LoadType load_type = 1;
+  optional uint64 load_value = 2;
+  optional string sourceid = 3;
+}
+
+// Supported-Features (TS 29.229 §6.3.29)
+//
+// Supported-Features ::= < AVP header: 628 10415 >
+//   { Vendor-Id }
+//   { Feature-List-ID }
+//   { Feature-List }
+//   *[AVP]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// User-Identifier (§8.4.36, the S6t form of §6.4.2)
+//
+// User-Identifier ::= <AVP header: 3102 10415>
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ External-Identifier ]
+//   [ Type-Of-External-Identifier ]
+//   *[AVP]
+//
+// Release 13 has only MSISDN and External-Identifier.
+message UserIdentifier {
+  option (diam.extensible) = true;
+  optional string user_name = 1;
+  optional bytes msisdn = 2;
+  optional string external_identifier = 3;
+  optional uint32 type_of_external_identifier = 4;
+}
+
+// Monitoring-Event-Configuration (§8.4.2)
+//
+// Monitoring-Event-Configuration ::= <AVP header: 3122 10415>
+//   [ SCEF-Reference-ID ]
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   { Monitoring-Type }
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   [ Maximum-Number-of-Reports ]
+//   [ Monitoring-Duration ]
+//   [ Charged-Party ]
+//   [ Maximum-Detection-Time ]
+//   [ UE-Reachability-Configuration ]
+//   [ Location-Information-Configuration ]
+//   [ Association-Type ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   [ PLMN-ID-Requested ]
+//   [ MTC-Provider-Info ]
+//   [ PDN-Connectivity-Status-Configuration ]
+//   [ Exclude-Identifiers ]
+//   [ Include-Identifiers ]
+//   *[AVP]
+message MonitoringEventConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  uint32 monitoring_type = 4;
+  repeated uint32 scef_reference_id_for_deletion = 5;
+  repeated uint64 scef_reference_id_for_deletion_ext = 6;
+  optional uint32 maximum_number_of_reports = 7;
+  optional uint32 monitoring_duration = 8;
+  optional string charged_party = 9;
+  optional uint32 maximum_detection_time = 10;
+  optional UeReachabilityConfiguration ue_reachability_configuration = 11;
+  optional LocationInformationConfiguration location_information_configuration = 12;
+  optional uint32 association_type = 13;
+  optional int32 dl_buffering_suggested_packet_count = 14;
+  optional PlmnIdRequested plmn_id_requested = 15;
+  optional MtcProviderInfo mtc_provider_info = 16;
+  optional PdnConnectivityStatusConfiguration pdn_connectivity_status_configuration = 17;
+  optional ExcludeIdentifiers exclude_identifiers = 18;
+  optional IncludeIdentifiers include_identifiers = 19;
+}
+
+// Monitoring-Event-Report (§8.4.3)
+//
+// Monitoring-Event-Report::= <AVP header: 3123 10415>
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   [ SCEF-Reference-ID-for-Deletion ]
+//   [ SCEF-Reference-ID-for-Deletion-Ext ]
+//   [ Visited-PLMN-Id ]
+//   [ Roaming-Information ]
+//   [ IMEI-Change ]
+//   [ Terminal-Information ]
+//   [ Reachability-Information ]
+//   [ Reachability-Cause ]
+//   [ Maximum-UE-Availability-Time ]
+//   [ EPS-Location-Information ]
+//   [ Monitoring-Type ]
+//   [ Event-Handling ]
+//   *[ Service-Report ]
+//   [ Loss-Of-Connectivity-Reason ]
+//   [ Idle-Status-Indication ]
+//   *[ PDN-Connectivity-Status-Report ]
+//   *[AVP]
+message MonitoringEventReport {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  optional string scef_id = 3;
+  optional uint32 scef_reference_id_for_deletion = 4;
+  optional uint64 scef_reference_id_for_deletion_ext = 5;
+  optional bytes visited_plmn_id = 6;
+  optional uint32 roaming_information = 7;
+  optional uint32 imei_change = 8;
+  optional TerminalInformation terminal_information = 9;
+  optional uint32 reachability_information = 10;
+  optional uint32 reachability_cause = 11;
+  optional uint32 maximum_ue_availability_time = 12;
+  optional EpsLocationInformation eps_location_information = 13;
+  optional uint32 monitoring_type = 14;
+  optional uint32 event_handling = 15;
+  repeated ServiceReport service_report = 16;
+  optional uint32 loss_of_connectivity_reason = 17;
+  optional IdleStatusIndication idle_status_indication = 18;
+  repeated PdnConnectivityStatusReport pdn_connectivity_status_report = 19;
+}
+
+// UE-Reachability-Configuration (§8.4.9)
+//
+// UE-Reachability-Configuration::= <AVP header: 3129 10415>
+//   [ Reachability-Type ]
+//   [ Maximum-Latency ]
+//   [ Maximum-Response-Time ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   *[AVP]
+message UeReachabilityConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 reachability_type = 1;
+  optional uint32 maximum_latency = 2;
+  optional uint32 maximum_response_time = 3;
+  optional int32 dl_buffering_suggested_packet_count = 4;
+}
+
+// Location-Information-Configuration (§8.4.15)
+//
+// Location-Information-Configuration::= <AVP header: 3135 10415>
+//   [ MONTE-Location-Type ]
+//   [ Accuracy ]
+//   [ Periodic-Time ]
+//   *[AVP]
+message LocationInformationConfiguration {
+  option (diam.extensible) = true;
+  optional uint32 monte_location_type = 1;
+  optional uint32 accuracy = 2;
+  optional uint32 periodic_time = 3;
+}
+
+// EPS-Location-Information (§8.4.21, originally TS 29.272 §7.3.111)
+//
+// EPS-Location-Information ::= <AVP header: 1496 10415>
+//   [ MME-Location-Information ]
+//   [ SGSN-Location-Information ]
+//   *[AVP]
+message EpsLocationInformation {
+  option (diam.extensible) = true;
+  optional MmeLocationInformation mme_location_information = 1;
+  optional SgsnLocationInformation sgsn_location_information = 2;
+}
+
+// MME-Location-Information (§8.4.34, originally TS 29.272 §7.3.115)
+//
+// MME-Location-Information ::= <AVP header: 1600 10415>
+//   [ E-UTRAN-Cell-Global-Identity ]
+//   [ Tracking-Area-Identity ]
+//   [ Current-Location-Retrieved ]
+//   [ Age-Of-Location-Information ]
+//   [ User-CSG-Information ]
+//   [ eNodeB-ID ]
+//   [ Extended-eNodeB-ID ]
+//   *[AVP]
+message MmeLocationInformation {
+  option (diam.extensible) = true;
+  optional bytes e_utran_cell_global_identity = 1;
+  optional bytes tracking_area_identity = 2;
+  optional CurrentLocationRetrieved current_location_retrieved = 3;
+  optional uint32 age_of_location_information = 4;
+  optional UserCsgInformation user_csg_information = 5;
+  optional bytes enodeb_id = 6;
+  optional bytes extended_enodeb_id = 7;
+}
+
+// SGSN-Location-Information (§8.4.35, originally TS 29.272 §7.3.116)
+//
+// SGSN-Location-Information ::= <AVP header: 1601 10415>
+//   [ Cell-Global-Identity ]
+//   [ Service-Area-Identity ]
+//   [ Routing-Area-Identity ]
+//   [ Current-Location-Retrieved ]
+//   [ Age-Of-Location-Information ]
+//   [ User-CSG-Information ]
+//   *[AVP]
+message SgsnLocationInformation {
+  option (diam.extensible) = true;
+  optional bytes cell_global_identity = 1;
+  optional bytes service_area_identity = 2;
+  optional bytes routing_area_identity = 3;
+  optional CurrentLocationRetrieved current_location_retrieved = 4;
+  optional uint32 age_of_location_information = 5;
+  optional UserCsgInformation user_csg_information = 6;
+}
+
+// User-CSG-Information (TS 32.299 §7.2.240A)
+//
+// User-CSG-Information ::= < AVP Header: 2319 >
+//   { CSG-Id }
+//   { CSG-Access-Mode }
+//   [ CSG-Membership-Indication ]
+message UserCsgInformation {
+  uint32 csg_id = 1;
+  CsgAccessMode csg_access_mode = 2;
+  optional CsgMembershipIndication csg_membership_indication = 3;
+}
+
+// Terminal-Information (TS 29.272 §7.3.3)
+//
+// Terminal-Information ::= < AVP Header: 1401 10415 >
+//   [ IMEI ]
+//   [ 3GPP2-MEID ]
+//   [ Software-Version ]
+//   *[ AVP ]
+message TerminalInformation {
+  option (diam.extensible) = true;
+  optional string imei = 1;
+  optional bytes tgpp2_meid = 2;
+  optional string software_version = 3;
+}
+
+// Idle-Status-Indication (TS 29.128 §6.4.32)
+//
+// Idle-Status-Indication ::= < AVP Header: 4322 10415 >
+//   [ Idle-Status-Timestamp ]
+//   [ Active-Time ]
+//   [ Subscribed-Periodic-RAU-TAU-Timer ]
+//   [ eDRX-Cycle-Length ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   *[ AVP ]
+message IdleStatusIndication {
+  option (diam.extensible) = true;
+  optional uint32 idle_status_timestamp = 1;
+  optional uint32 active_time = 2;
+  optional uint32 subscribed_periodic_rau_tau_timer = 3;
+  optional EdrxCycleLength edrx_cycle_length = 4;
+  optional int32 dl_buffering_suggested_packet_count = 5;
+}
+
+// eDRX-Cycle-Length (TS 29.272 §7.3.215)
+//
+// eDRX-Cycle-Length ::= < AVP Header: 1691 10415 >
+//   { RAT-Type }
+//   { eDRX-Cycle-Length-Value }
+//   *[ AVP ]
+message EdrxCycleLength {
+  option (diam.extensible) = true;
+  RatType rat_type = 1;
+  bytes edrx_cycle_length_value = 2;
+}
+
+// IMSI-Group-Id (TS 29.272 §7.3.189)
+//
+// IMSI-Group-Id ::= < AVP Header: 1675 10415 >
+//   { Group-Service-Id }
+//   { Group-PLMN-Id }
+//   { Local-Group-Id }
+//   *[ AVP ]
+message ImsiGroupId {
+  option (diam.extensible) = true;
+  uint32 group_service_id = 1;
+  bytes group_plmn_id = 2;
+  bytes local_group_id = 3;
+}
+
+// Monitoring-Event-Config-Status (§8.4.24)
+//
+// Monitoring-Event-Config-Status::= <AVP header: 3142 10415>
+//   *[ Service-Report ]
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   *[AVP]
+//
+// Release 13 (V13.2.0 §8.4.24) starts with [ Service-Result ] where the
+// current release has *[ Service-Report ]. Service-Result has the M-bit
+// set, so a Release 13 status would otherwise fail with 5001; it is kept
+// as [ Service-Result ] at its Release 13 position (see the file header).
+message MonitoringEventConfigStatus {
+  option (diam.extensible) = true;
+  optional ServiceResult service_result = 1;
+  repeated ServiceReport service_report = 2;
+  uint32 scef_reference_id = 3;
+  optional uint64 scef_reference_id_ext = 4;
+  optional string scef_id = 5;
+}
+
+// AESE-Communication-Pattern (§8.4.25)
+//
+// AESE-Communication-Pattern ::= <AVP header: 3113 10415>
+//   [ SCEF-Reference-ID ]
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   *[ Communication-Pattern-Set ]
+//   [ MTC-Provider-Info ]
+//   *[ AVP ]
+message AeseCommunicationPattern {
+  option (diam.extensible) = true;
+  optional uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  repeated uint32 scef_reference_id_for_deletion = 4;
+  repeated uint64 scef_reference_id_for_deletion_ext = 5;
+  repeated CommunicationPatternSet communication_pattern_set = 6;
+  optional MtcProviderInfo mtc_provider_info = 7;
+}
+
+// Communication-Pattern-Set (§8.4.26)
+//
+// Communication-Pattern-Set ::= <AVP header: 3114 10415>
+//   [ Periodic-Communication-Indicator ]
+//   [ Communication-Duration-Time ]
+//   [ Periodic-Time ]
+//   *[ Scheduled-Communication-Time ]
+//   [ Stationary-Indication ]
+//   [ Reference-ID-Validity-Time ]
+//   [ Traffic-Profile ]
+//   [ Battery-Indicator ]
+//   *[ AVP ]
+message CommunicationPatternSet {
+  option (diam.extensible) = true;
+  optional uint32 periodic_communication_indicator = 1;
+  optional uint32 communication_duration_time = 2;
+  optional uint32 periodic_time = 3;
+  repeated ScheduledCommunicationTime scheduled_communication_time = 4;
+  optional uint32 stationary_indication = 5;
+  optional uint32 reference_id_validity_time = 6;
+  optional uint32 traffic_profile = 7;
+  optional uint32 battery_indicator = 8;
+}
+
+// Scheduled-Communication-Time (§8.4.30)
+//
+// Scheduled-communication-time ::= <AVP header: 3118 10415>
+//   [ Day-Of-Week-Mask ]
+//   [ Time-Of-Day-Start ]
+//   [ Time-Of-Day-End ]
+//   *[AVP]
+message ScheduledCommunicationTime {
+  option (diam.extensible) = true;
+  optional uint32 day_of_week_mask = 1;
+  optional uint32 time_of_day_start = 2;
+  optional uint32 time_of_day_end = 3;
+}
+
+// AESE-Communication-Pattern-Config-Status (§8.4.32)
+//
+// AESE-Communication-Pattern-Config-Status ::= <AVP header: 3120 10415>
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   [ AESE-Error-Report ]
+//   *[AVP]
+message AeseCommunicationPatternConfigStatus {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  optional string scef_id = 3;
+  optional AeseErrorReport aese_error_report = 4;
+}
+
+// AESE-Error-Report (§8.4.33)
+//
+// AESE-Error-Report ::= <AVP header: 3121 10415>
+//   [ Service-Result ]
+//   *[AVP]
+message AeseErrorReport {
+  option (diam.extensible) = true;
+  optional ServiceResult service_result = 1;
+}
+
+// Service-Result (§8.4.37)
+//
+// Service-Result ::= <AVP header: 3146 10415>
+//   [ Vendor-Id ]
+//   [ Service-Result-Code ]
+//   *[AVP]
+message ServiceResult {
+  option (diam.extensible) = true;
+  optional uint32 vendor_id = 1;
+  optional uint32 service_result_code = 2;
+}
+
+// Supported-Services (§8.4.40)
+//
+// Supported-Services ::= <AVP header: 3143 10415>
+//   [ Supported-Monitoring-Events ]
+//   [ Node-Type ]
+//   *[AVP]
+message SupportedServices {
+  option (diam.extensible) = true;
+  optional uint64 supported_monitoring_events = 1;
+  optional uint32 node_type = 2;
+}
+
+// NIDD-Authorization-Request (§8.4.44)
+//
+// NIDD-Authorization-Request ::= <AVP header: 3150 10415>
+//   [ Service-Selection ]
+//   [ Requested-Validity-Time ]
+//   *[AVP]
+message NiddAuthorizationRequest {
+  option (diam.extensible) = true;
+  optional string service_selection = 1;
+  optional uint32 requested_validity_time = 2;
+}
+
+// NIDD-Authorization-Response (§8.4.45)
+//
+// NIDD-Authorization-Response::= <AVP header: 3151 10415>
+//   [ MSISDN ]
+//   [ User-Name ]
+//   [ External-Identifier ]
+//   [ Granted-Validity-Time ]
+//   *[AVP]
+message NiddAuthorizationResponse {
+  option (diam.extensible) = true;
+  optional bytes msisdn = 1;
+  optional string user_name = 2;
+  optional string external_identifier = 3;
+  optional uint32 granted_validity_time = 4;
+}
+
+// Service-Report (§8.4.47)
+//
+// Service-Report ::= <AVP header: 3152 10415>
+//   [ Service-Result ]
+//   [ Node-Type ]
+//   *[AVP]
+message ServiceReport {
+  option (diam.extensible) = true;
+  optional ServiceResult service_result = 1;
+  optional uint32 node_type = 2;
+}
+
+// Enhanced-Coverage-Restriction (§8.4.51)
+//
+// Enhanced-Coverage-Restriction ::=<AVP header: 3155 10415>
+//   [ Restricted-PLMN-List ]
+//   [ Allowed-PLMN-List ]
+//   *[AVP]
+message EnhancedCoverageRestriction {
+  option (diam.extensible) = true;
+  optional RestrictedPlmnList restricted_plmn_list = 1;
+  optional AllowedPlmnList allowed_plmn_list = 2;
+}
+
+// Enhanced-Coverage-Restriction-Data (§8.4.52)
+//
+// Enhanced-Coverage-Restriction-Data ::= <AVP header: 3156 10415>
+//   { Enhanced-Coverage-Restriction }
+//   [ Visited-PLMN-Id ]
+//   *[AVP]
+message EnhancedCoverageRestrictionData {
+  option (diam.extensible) = true;
+  EnhancedCoverageRestriction enhanced_coverage_restriction = 1;
+  optional bytes visited_plmn_id = 2;
+}
+
+// Restricted-PLMN-List (§8.4.53)
+//
+// Restricted-PLMN-List ::= <AVP header: 3157 10415>
+//   *[ Visited-PLMN-Id ]
+//   *[AVP]
+message RestrictedPlmnList {
+  option (diam.extensible) = true;
+  repeated bytes visited_plmn_id = 1;
+}
+
+// Allowed-PLMN-List (§8.4.54)
+//
+// Allowed-PLMN-List ::= <AVP header: 3158 10415>
+//   *[ Visited-PLMN-Id ]
+//   *[AVP]
+message AllowedPlmnList {
+  option (diam.extensible) = true;
+  repeated bytes visited_plmn_id = 1;
+}
+
+// NIDD-Authorization-Update (§8.4.57)
+//
+// NIDD-Authorization-Update::= <AVP header: 3161 10415>
+//   *[ APN-Validity-Time ]
+//   *[AVP]
+message NiddAuthorizationUpdate {
+  option (diam.extensible) = true;
+  repeated ApnValidityTime apn_validity_time = 1;
+}
+
+// Group-Report (§8.4.61)
+//
+// Group-Report::= <AVP header: 3165 10415>
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   [ SCEF-ID ]
+//   *[ Group-Report-Item ]
+//   *[AVP]
+message GroupReport {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  optional string scef_id = 3;
+  repeated GroupReportItem group_report_item = 4;
+}
+
+// Group-Report-Item (§8.4.62)
+//
+// Group-Report-Item::= <AVP header: 3166 10415>
+//   { User-Identifier }
+//   [ Visited-PLMN-Id ]
+//   [ Roaming-Information ]
+//   [ IMEI-Change ]
+//   [ Reachability-Information ]
+//   [ Maximum-UE-Availability-Time ]
+//   [ EPS-Location-Information ]
+//   [ Monitoring-Type ]
+//   *[ Service-Report ]
+//   [ S6t-HSS-Cause ]
+//   [ Idle-Status-Indication ]
+//   [ Reporting-Time-Stamp ]
+//   [ Updated-Network-Configuration ]
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   [ Event-Handling ]
+//   [ Loss-Of-Connectivity-Reason ]
+//   *[ PDN-Connectivity-Status-Report ]
+//   *[AVP]
+message GroupReportItem {
+  option (diam.extensible) = true;
+  UserIdentifier user_identifier = 1;
+  optional bytes visited_plmn_id = 2;
+  optional uint32 roaming_information = 3;
+  optional uint32 imei_change = 4;
+  optional uint32 reachability_information = 5;
+  optional uint32 maximum_ue_availability_time = 6;
+  optional EpsLocationInformation eps_location_information = 7;
+  optional uint32 monitoring_type = 8;
+  repeated ServiceReport service_report = 9;
+  optional uint32 s6t_hss_cause = 10;
+  optional IdleStatusIndication idle_status_indication = 11;
+  optional uint32 reporting_time_stamp = 12;
+  optional UpdatedNetworkConfiguration updated_network_configuration = 13;
+  repeated uint32 scef_reference_id_for_deletion = 14;
+  repeated uint64 scef_reference_id_for_deletion_ext = 15;
+  optional uint32 event_handling = 16;
+  optional uint32 loss_of_connectivity_reason = 17;
+  repeated PdnConnectivityStatusReport pdn_connectivity_status_report = 18;
+}
+
+// APN-Validity-Time (§8.4.65)
+//
+// APN-Validity-Time::= <AVP header:3169 10415>
+//   { Granted-Validity-Time }
+//   [ Service-Selection ]
+//   *[AVP]
+message ApnValidityTime {
+  option (diam.extensible) = true;
+  uint32 granted_validity_time = 1;
+  optional string service_selection = 2;
+}
+
+// Suggested-Network-Configuration (§8.4.66)
+//
+// Suggested-Network-Configuration::= <AVP header: 3170 10415>
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   [ Subscribed-Periodic-RAU-TAU-Timer ]
+//   [ Active-Time ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   [ MTC-Provider-Info ]
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   *[AVP]
+message SuggestedNetworkConfiguration {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  optional uint32 subscribed_periodic_rau_tau_timer = 4;
+  optional uint32 active_time = 5;
+  optional int32 dl_buffering_suggested_packet_count = 6;
+  optional MtcProviderInfo mtc_provider_info = 7;
+  repeated uint32 scef_reference_id_for_deletion = 8;
+  repeated uint64 scef_reference_id_for_deletion_ext = 9;
+}
+
+// Monitoring-Event-Report-Status (§8.4.67)
+//
+// Monitoring-Event-Report-Status ::= <AVP header: 3171 10415>
+//   { SCEF-Reference-ID }
+//   [ SCEF-Reference-ID-Ext ]
+//   { SCEF-ID }
+//   [ Result-Code ]
+//   [ Experimental-Result-Code ]
+//   *[AVP]
+message MonitoringEventReportStatus {
+  option (diam.extensible) = true;
+  uint32 scef_reference_id = 1;
+  optional uint64 scef_reference_id_ext = 2;
+  string scef_id = 3;
+  optional uint32 result_code = 4;
+  optional uint32 experimental_result_code = 5;
+}
+
+// AdditionalIdentifiers (§8.4.69)
+//
+// AdditionalIdentifiers::= <AVP header: 3173 10415>
+//   *[ External-Identifier ]
+//   *[AVP]
+message AdditionalIdentifiers {
+  option (diam.extensible) = true;
+  repeated string external_identifier = 1;
+}
+
+// Group-User-Identifier (§8.4.73)
+//
+// Group-User-Identifier ::= <AVP header: 3177 10415>
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ External-Identifier ]
+//   *[AVP]
+message GroupUserIdentifier {
+  option (diam.extensible) = true;
+  optional string user_name = 1;
+  optional bytes msisdn = 2;
+  optional string external_identifier = 3;
+}
+
+// MTC-Provider-Info (§8.4.74)
+//
+// MTC-Provider-Info ::= <AVP header: 3178 10415>
+//   [ MTC-Provider-ID ]
+//   *[AVP]
+message MtcProviderInfo {
+  option (diam.extensible) = true;
+  optional string mtc_provider_id = 1;
+}
+
+// PDN-Connectivity-Status-Configuration (§8.4.76)
+//
+// PDN-Connectivity-Status-Configuration ::= <AVP header: 3180 10415>
+//   [ Service-Selection ]
+//   *[AVP]
+message PdnConnectivityStatusConfiguration {
+  option (diam.extensible) = true;
+  optional string service_selection = 1;
+}
+
+// PDN-Connectivity-Status-Report (§8.4.77)
+//
+// PDN-Connectivity-Status-Report ::= <AVP header: 3181 10415>
+//   { Service-Selection }
+//   { PDN-Connectivity-Status-Type }
+//   [ PDN-Type ]
+//   [ Non-IP-PDN-Type-Indicator ]
+//   [ Non-IP-Data-Delivery-Mechanism ]
+//   *2 [ Served-Party-IP-Address ]
+//   *[AVP]
+message PdnConnectivityStatusReport {
+  option (diam.extensible) = true;
+  string service_selection = 1;
+  uint32 pdn_connectivity_status_type = 2;
+  optional PdnType pdn_type = 3;
+  optional NonIpPdnTypeIndicator non_ip_pdn_type_indicator = 4;
+  // TS 29.272 §7.3.205: SGi-BASED-DATA-DELIVERY (0), SCEF-BASED-DATA-DELIVERY (1)
+  optional uint32 non_ip_data_delivery_mechanism = 5;
+  repeated bytes served_party_ip_address = 6 [(diam.max) = 2];
+}
+
+// Updated-Network-Configuration (§8.4.80)
+//
+// Updated-Network-Configuration::= <AVP header: 3184 10415>
+//   { SCEF-ID }
+//   [ SCEF-Reference-ID ]
+//   [ SCEF-Reference-ID-Ext ]
+//   *[ SCEF-Reference-ID-for-Deletion ]
+//   *[ SCEF-Reference-ID-for-Deletion-Ext ]
+//   [ Subscribed-Periodic-RAU-TAU-Timer ]
+//   [ Active-Time ]
+//   [ DL-Buffering-Suggested-Packet-Count ]
+//   *[AVP]
+message UpdatedNetworkConfiguration {
+  option (diam.extensible) = true;
+  string scef_id = 1;
+  optional uint32 scef_reference_id = 2;
+  optional uint64 scef_reference_id_ext = 3;
+  repeated uint32 scef_reference_id_for_deletion = 4;
+  repeated uint64 scef_reference_id_for_deletion_ext = 5;
+  optional uint32 subscribed_periodic_rau_tau_timer = 6;
+  optional uint32 active_time = 7;
+  optional int32 dl_buffering_suggested_packet_count = 8;
+}
+
+// Exclude-Identifiers (§8.4.84)
+//
+// Exclude-Identifiers::= <AVP header: 3188 10415>
+//   *[ External-Identifier ]
+//   *[ MSISDN ]
+//   *[AVP]
+message ExcludeIdentifiers {
+  option (diam.extensible) = true;
+  repeated string external_identifier = 1;
+  repeated bytes msisdn = 2;
+}
+
+// Include-Identifiers (§8.4.85)
+//
+// Include-Identifiers::= <AVP header: xxxx 10415>
+//   *[ External-Identifier ]
+//   *[ MSISDN ]
+//   *[AVP]
+//
+// The code is 3189 (table 8.4.1-1).
+message IncludeIdentifiers {
+  option (diam.extensible) = true;
+  repeated string external_identifier = 1;
+  repeated bytes msisdn = 2;
+}
+
+// Configuration-Information-Request (8.2.3)
+//
+// < Configuration-Information-Request > ::= < Diameter Header: 8388718, REQ, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Identifier }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   *[ Monitoring-Event-Configuration ]
+//   [ CIR-Flags ]
+//   *[ AESE-Communication-Pattern ]
+//   [ Enhanced-Coverage-Restriction ]
+//   [ Group-Reporting-Guard-Timer ]
+//   [ AdditionalIdentifiers ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   [ Suggested-Network-Configuration ]
+//   *[AVP]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE; see the
+// file header).
+message ConfigurationInformationRequest {
+  option (diam.command) = {
+    code: 8388718
+    app_id: 16777345
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  UserIdentifier user_identifier = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // TS 29.229 §7.2.1 (by §8.1.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  repeated MonitoringEventConfiguration monitoring_event_configuration = 12;
+  optional uint32 cir_flags = 13;
+  repeated AeseCommunicationPattern aese_communication_pattern = 14;
+  optional EnhancedCoverageRestriction enhanced_coverage_restriction = 15;
+  optional uint32 group_reporting_guard_timer = 16;
+  optional AdditionalIdentifiers additional_identifiers = 17 [(diam.avp) = "ADDITIONALIDENTIFIERS"];
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+  optional SuggestedNetworkConfiguration suggested_network_configuration = 20;
+}
+
+// Configuration-Information-Answer (8.2.4)
+//
+// < Configuration-Information-Answer > ::= < Diameter Header: 8388718, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ User-Identifier ]
+//   [ Number-of-UEs ]
+//   *[ Monitoring-Event-Report ]
+//   *[ Monitoring-Event-Config-Status ]
+//   *[ AESE-Communication-Pattern-Config-Status ]
+//   *[ Supported-Services ]
+//   [ S6t-HSS-Cause ]
+//   [ Enhanced-Coverage-Restriction-Data ]
+//   [ CIA-Flags ]
+//   *[ IMSI-Group-Id]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   [ Suggested-Network-Configuration ]
+//   *[AVP]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE).
+message ConfigurationInformationAnswer {
+  option (diam.command) = {
+    code: 8388718
+    app_id: 16777345
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional UserIdentifier user_identifier = 13;
+  optional uint32 number_of_ues = 14;
+  repeated MonitoringEventReport monitoring_event_report = 15;
+  repeated MonitoringEventConfigStatus monitoring_event_config_status = 16;
+  repeated AeseCommunicationPatternConfigStatus aese_communication_pattern_config_status = 17;
+  repeated SupportedServices supported_services = 18;
+  optional uint32 s6t_hss_cause = 19;
+  optional EnhancedCoverageRestrictionData enhanced_coverage_restriction_data = 20;
+  optional uint32 cia_flags = 21;
+  repeated ImsiGroupId imsi_group_id = 22;
+  optional godiam.base.FailedAvp failed_avp = 23;
+  repeated godiam.base.ProxyInfo proxy_info = 24;
+  repeated string route_record = 25;
+  optional SuggestedNetworkConfiguration suggested_network_configuration = 26;
+}
+
+// Reporting-Information-Request (8.2.5)
+//
+// < Reporting-Information-Request > ::= < Diameter Header: 8388719, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   { Destination-Host }
+//   { Destination-Realm }
+//   *[ Supported-Features ]
+//   [ User-Identifier ]
+//   *[ Monitoring-Event-Report ]
+//   *[ Group-Report ]
+//   [ Updated-Network-Configuration ]
+//   [ RIR-Flags ]
+//   *[ Supported-Services ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[AVP]
+//
+// The header lacks REQ; RIR is a request (see the file header).
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE), and the
+// Release 13 [ Failed-AVP ] precedes Proxy-Info (see the file header).
+message ReportingInformationRequest {
+  option (diam.command) = {
+    code: 8388719
+    app_id: 16777345
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  string destination_host = 7;
+  string destination_realm = 8;
+  // TS 29.229 §7.2.1 (by §8.1.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 9 [(diam.m) = true];
+  optional UserIdentifier user_identifier = 10;
+  repeated MonitoringEventReport monitoring_event_report = 11;
+  repeated GroupReport group_report = 12;
+  optional UpdatedNetworkConfiguration updated_network_configuration = 13;
+  optional uint32 rir_flags = 14;
+  repeated SupportedServices supported_services = 15;
+  // Release 13 (V13.2.0 §8.2.5): *[ Failed-AVP ]
+  optional godiam.base.FailedAvp failed_avp = 16;
+  repeated godiam.base.ProxyInfo proxy_info = 17;
+  repeated string route_record = 18;
+}
+
+// Reporting-Information-Answer (8.2.6)
+//
+// < Reporting-Information-Answer > ::= < Diameter Header: 8388719, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   *[ Monitoring-Event-Report-Status ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[AVP]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE).
+message ReportingInformationAnswer {
+  option (diam.command) = {
+    code: 8388719
+    app_id: 16777345
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  repeated SupportedFeatures supported_features = 9;
+  repeated MonitoringEventReportStatus monitoring_event_report_status = 10;
+  optional godiam.base.FailedAvp failed_avp = 11;
+  repeated godiam.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
+
+// NIDD-Information-Request (8.2.7)
+//
+// < NIDD-Information-Request > ::= < Diameter Header: 8388726, REQ, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Identifier }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   [ NIDD-Authorization-Request ]
+//   [ NIDD-Authorization-Update ]
+//   [ NIR-Flags ]
+//   *[ Group-User-Identifier ]
+//   [ MTC-Provider-Info ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[AVP]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE).
+message NiddInformationRequest {
+  option (diam.command) = {
+    code: 8388726
+    app_id: 16777345
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  UserIdentifier user_identifier = 9;
+  optional OcSupportedFeatures oc_supported_features = 10;
+  // TS 29.229 §7.2.1 (by §8.1.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 11 [(diam.m) = true];
+  optional NiddAuthorizationRequest nidd_authorization_request = 12;
+  optional NiddAuthorizationUpdate nidd_authorization_update = 13;
+  optional uint32 nir_flags = 14;
+  repeated GroupUserIdentifier group_user_identifier = 15;
+  optional MtcProviderInfo mtc_provider_info = 16;
+  repeated godiam.base.ProxyInfo proxy_info = 17;
+  repeated string route_record = 18;
+}
+
+// NIDD-Information-Answer (8.2.8)
+//
+// < NIDD-Information-Answer > ::= < Diameter Header: 8388726, PXY, 16777345 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   [ NIDD-Authorization-Response ]
+//   *[ Group-User-Identifier ]
+//   [ NIA-Flags ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[AVP]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§8.2.2 NOTE).
+message NiddInformationAnswer {
+  option (diam.command) = {
+    code: 8388726
+    app_id: 16777345
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  optional NiddAuthorizationResponse nidd_authorization_response = 13;
+  repeated GroupUserIdentifier group_user_identifier = 14;
+  optional uint32 nia_flags = 15;
+  optional godiam.base.FailedAvp failed_avp = 16;
+  repeated godiam.base.ProxyInfo proxy_info = 17;
+  repeated string route_record = 18;
+}

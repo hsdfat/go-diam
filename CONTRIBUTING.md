@@ -85,7 +85,9 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
    SIP-Auth-Data-Item; SWx imports `cx.proto` and `s6a.proto`). An AVP
    whose flags differ from the imported entry, or whose name two imports
    both define, goes in its own dictionary; an entry in its own
-   dictionary wins over an imported one of the same name.
+   dictionary wins over an imported one of the same name. An application whose AVP table differs
+   from another's has its own dictionary even in the same specification
+   (S6m/S6n next to S6t).
 3. **Generate** with `make generate` and commit the output.
 4. **Pass the gates.** An application is listed as *verified* only when all
    of these hold:
@@ -97,7 +99,8 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
       `internal/interop/testdata/dictcheck-absent.txt`;
    3. interop with go-diameter in both directions for every command, built
       on go-diameter's side from its own constants and dictionary. If
-      go-diameter has no dictionary for the application (Cx/Dx, Sh/Dh, SLh, Zh), use
+      go-diameter has no dictionary for the application (Cx/Dx, Sh/Dh, SLh,
+      Zh, S6t, S6m, S6c), use
       its definitions of the AVPs from the applications that have them, and
       list the AVPs it defines nowhere with their code and flags restated
       from the specification, as `cxRestated` in

@@ -641,3 +641,65 @@ The text above is unchanged; these win.
   under other applications are built from those (`fiorixSwxGaps`), and the
   ones it has nowhere carry code and M-bit restated from the specification
   (`swxRestated` in `internal/interop/swx_test.go`).
+- **S6t release.** S6t is transcribed from TS 29.336 V18.2.0, the latest
+  Release 18 version, with V13.2.0 (the earliest Release 13 version ETSI
+  publishes; S6t starts in Release 13) as the oldest-release reference
+  instead of Release 8. The S6a and Sh rulings apply unchanged: re-used AVPs
+  in the application's own dictionary (`Avp`, `IetfAvp`) with the M-bit of
+  table 8.4.1-2 or, where its column is empty, of the defining
+  specification; Supported-Features with the M-bit in requests only
+  (§8.1.9 applies TS 29.229 §7.2); `[ Failed-AVP ]` in answers. The interop
+  of §8 gate 3 is built AVP by AVP (`s6tRestated` in
+  `internal/interop/s6t_test.go`), and where go-diameter defines an AVP
+  with another M-bit than S6t gives it (table 8.4.1-2 clears it for
+  Served-Party-IP-Address, Terminal-Information and PDN-Type), `s6tM`
+  applies the S6t bit on go-diameter's side; a test keeps both lists
+  exact. No benchmark for S6t.
+- **§5.3a, AVPs dropped after the oldest release (S6t).** The mirror rule
+  recorded for Cx RTR applies twice: Release 13 RIR lists
+  `*[ Failed-AVP ]` and Release 13 Monitoring-Event-Config-Status starts
+  with `[ Service-Result ]`, both M-bit AVPs that the current release no
+  longer lists. Both are kept at their Release 13 position as optional.
+- **§5.1, a request header without REQ (S6t RIR).** TS 29.336 §8.2.5
+  writes the RIR header as `8388719, PXY` and says the R-bit is cleared,
+  which would make RIR and RIA the same message. The command table names
+  RIR the request of the pair, so it is generated with `request: true`.
+- **Vendor-Specific-Application-Id named by a NOTE only (S6t).** TS 29.336
+  §8.2.2 NOTE says every CCF of the specification includes
+  `[ Vendor-Specific-Application-Id ]` and that a receiver ignores it, but
+  the S6t ABNFs leave it out. With the M-bit set it would land in Unknown
+  and fail with 5001, the opposite of "ignore", so every S6t command
+  carries it as optional after DRMP, where S6a puts it.
+- **S6m release, and a second application of one specification with its
+  own dictionary.** S6m/S6n is transcribed from TS 29.336 V18.2.0, the S6t
+  version, with V11.1.0 (the first version with IANA codes; S6m starts in
+  Release 11) as the oldest-release reference. Unlike S13 next to S6a, it
+  does not import the S6t file: TS 29.336 gives S6m and S6t separate AVP
+  tables (6.4.1/1-2 and 8.4.1-1-2), most S6m AVPs are not S6t entries, and
+  User-Identifier has another grammar on each application. So
+  `ts29336/s6m/s6m.proto` has its own `Avp` and `IetfAvp` dictionaries, in
+  a subdirectory because `godiam.s6t` owns the specification directory.
+  Table 6.4.1/2 has no M-bit column, so every re-used AVP carries its
+  defining specification's flag rule. The S6t rulings on
+  Vendor-Specific-Application-Id (§6.2.2 NOTE says the same) and
+  Supported-Features (§6.1.9) apply. The interop of §8 gate 3 is built AVP
+  by AVP (`s6mRestated`); no benchmark.
+- **S6m and S6c are two packages.** The roadmap names them together, as
+  the two SMS-related HSS interfaces, but they come from two
+  specifications (TS 29.336 and TS 29.338) with separate AVP tables,
+  application ids and releases, and TS 29.338 gives Serving-Node a longer
+  grammar (IP-SM-GW-SBI-Support-Indicator) than TS 29.336 does. One
+  application per proto file and package (C3) keeps them apart: `s6m` and
+  `s6c`.
+- **S6c release.** S6c is transcribed from TS 29.338 V18.2.0, the latest
+  Release 18 version, with V11.0.0 as the oldest-release reference (S6c
+  starts in Release 11). The S6a and S6t rulings apply: re-used AVPs in the
+  application's own dictionary with the M-bit of table 5.3.3.1/2, which
+  sets it for MME-Realm and MME-Number-for-MT-SMS and clears it for DRMP;
+  Supported-Features with the M-bit in requests only (§4.9). The six
+  per-node delivery-outcome AVPs share one grammar and one message type
+  (`DeliveryOutcome`, §5.2: the code comes from the referring field), and
+  have no `*[ AVP ]`. SMSMI-Correlation-ID is 3324 from table 6.3.3.1/1,
+  where its ABNF writes 3308. The interop of §8 gate 3 is built AVP by AVP
+  (`s6cRestated`), with `s6cM` applying the two table 5.3.3.1/2 M-bits on
+  go-diameter's side; no benchmark.

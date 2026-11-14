@@ -44,3 +44,18 @@
 # definition compared here; go-diameter's SWx application has M,V, which the
 # interop test overrides (swxM in swx_test.go).
 1503 10415 m TS 29.273 table 8.2.3.0/1: AN-Trusted is V, M must not on SWx; go-diameter has M,V (the STa rule of table 5.2.3.1/1)
+#
+# S6t (proto/3gpp/ts29336/s6t.proto, TS 29.336 V18.2.0). Table 8.4.1-2 gives
+# the S6t M-bit of re-used AVPs; where it is empty the defining
+# specification's rule applies.
+848 10415 m TS 29.336 table 8.4.1-2: Served-Party-IP-Address "Must not set" in S6t; go-diameter has the TS 32.299 rule (V,M)
+1401 10415 m TS 29.336 table 8.4.1-2: Terminal-Information "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
+1456 10415 m TS 29.336 table 8.4.1-2: PDN-Type "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
+#
+# S6m/S6n (proto/3gpp/ts29336/s6m/s6m.proto, TS 29.336 V18.2.0).
+3010 10415 name TS 29.368 §6.4.11 and TS 29.336 §6.4.5 name this AVP Application-Port-Identifier; go-diameter spells it Application-Port-Identifer
+#
+# S6c (proto/3gpp/ts29338/s6c.proto, TS 29.338 V18.2.0). Table 5.3.3.1/2
+# NOTE 1 says its M-bit column overrides the defining specification.
+1645 10415 m TS 29.338 table 5.3.3.1/2: MME-Number-for-MT-SMS "Must" in S6c; go-diameter has the TS 29.272 rule (V, M must not)
+2408 10415 m TS 29.338 table 5.3.3.1/2: MME-Realm "Must" in S6c; go-diameter has the TS 29.173 rule (V, M must not)
