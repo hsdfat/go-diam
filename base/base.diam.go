@@ -1001,29 +1001,41 @@ type CapabilitiesExchangeAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *CapabilitiesExchangeAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	for i := range m.HostIpAddress {
 		b, s = diam.BeginAVP(b, 257, diam.AVPFlagMandatory, 0)
 		b = diam.AppendAddress(b, m.HostIpAddress[i])
 		b = diam.EndAVP(b, s)
 	}
-	b, s = diam.BeginAVP(b, 266, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.VendorId)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 269, 0, 0)
-	b = append(b, m.ProductName...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 266, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.VendorId)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<4) != 0 {
+		b, s = diam.BeginAVP(b, 269, 0, 0)
+		b = append(b, m.ProductName...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.OriginStateId.Set {
 		b, s = diam.BeginAVP(b, 278, diam.AVPFlagMandatory, 0)
 		b = diam.AppendUnsigned32(b, m.OriginStateId.V)
@@ -1280,6 +1292,9 @@ func (m *CapabilitiesExchangeAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(268, 0, "RESULT_CODE")
 	}
@@ -1309,6 +1324,31 @@ func (m *CapabilitiesExchangeAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *CapabilitiesExchangeAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<0) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.VendorSpecificApplicationId {
+		if err := m.VendorSpecificApplicationId[i].Validate(); err != nil {
+			return diam.InGroup(err, 260)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -1526,18 +1566,26 @@ type DeviceWatchdogAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *DeviceWatchdogAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.ErrorMessage.Set {
 		b, s = diam.BeginAVP(b, 281, 0, 0)
 		b = append(b, m.ErrorMessage.V...)
@@ -1670,6 +1718,9 @@ func (m *DeviceWatchdogAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(268, 0, "RESULT_CODE")
 	}
@@ -1685,6 +1736,26 @@ func (m *DeviceWatchdogAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *DeviceWatchdogAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<0) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -1902,18 +1973,26 @@ type DisconnectPeerAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *DisconnectPeerAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.ErrorMessage.Set {
 		b, s = diam.BeginAVP(b, 281, 0, 0)
 		b = append(b, m.ErrorMessage.V...)
@@ -2026,6 +2105,9 @@ func (m *DisconnectPeerAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(268, 0, "RESULT_CODE")
 	}
@@ -2041,6 +2123,26 @@ func (m *DisconnectPeerAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *DisconnectPeerAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<0) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -2426,21 +2528,31 @@ type ReAuthAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *ReAuthAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.UserName.Set {
 		b, s = diam.BeginAVP(b, 1, diam.AVPFlagMandatory, 0)
 		b = append(b, m.UserName.V...)
@@ -2674,6 +2786,9 @@ func (m *ReAuthAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -2700,6 +2815,34 @@ func (m *ReAuthAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *ReAuthAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -3095,21 +3238,31 @@ type SessionTerminationAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *SessionTerminationAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.UserName.Set {
 		b, s = diam.BeginAVP(b, 1, diam.AVPFlagMandatory, 0)
 		b = append(b, m.UserName.V...)
@@ -3351,6 +3504,9 @@ func (m *SessionTerminationAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -3377,6 +3533,34 @@ func (m *SessionTerminationAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *SessionTerminationAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -3738,21 +3922,31 @@ type AbortSessionAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *AbortSessionAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
-	b = diam.AppendUnsigned32(b, m.ResultCode)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
+		b = diam.AppendUnsigned32(b, m.ResultCode)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.UserName.Set {
 		b, s = diam.BeginAVP(b, 1, diam.AVPFlagMandatory, 0)
 		b = append(b, m.UserName.V...)
@@ -3986,6 +4180,9 @@ func (m *AbortSessionAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -4012,6 +4209,34 @@ func (m *AbortSessionAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *AbortSessionAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<1) != 0) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.

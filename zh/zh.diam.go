@@ -442,15 +442,21 @@ type MultimediaAuthAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *MultimediaAuthAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 260, diam.AVPFlagMandatory, 0)
-	b = (&m.VendorSpecificApplicationId).AppendAVPs(b)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 260, diam.AVPFlagMandatory, 0)
+		b = (&m.VendorSpecificApplicationId).AppendAVPs(b)
+		b = diam.EndAVP(b, s)
+	}
 	if m.ResultCode.Set {
 		b, s = diam.BeginAVP(b, 268, diam.AVPFlagMandatory, 0)
 		b = diam.AppendUnsigned32(b, m.ResultCode.V)
@@ -461,15 +467,21 @@ func (m *MultimediaAuthAnswer) AppendAVPs(b []byte) []byte {
 		b = m.ExperimentalResult.AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
-	b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
-	b = diam.AppendInteger32(b, int32(m.AuthSessionState))
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
+		b = diam.AppendInteger32(b, int32(m.AuthSessionState))
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<4) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.UserName.Set {
 		b, s = diam.BeginAVP(b, 1, diam.AVPFlagMandatory, 0)
 		b = append(b, m.UserName.V...)
@@ -730,6 +742,9 @@ func (m *MultimediaAuthAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -772,6 +787,47 @@ func (m *MultimediaAuthAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *MultimediaAuthAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<4) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.ResultCode.Set) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if err := m.VendorSpecificApplicationId.Validate(); err != nil {
+		return diam.InGroup(err, 260)
+	}
+	if m.ExperimentalResult != nil {
+		if err := m.ExperimentalResult.Validate(); err != nil {
+			return diam.InGroup(err, 297)
+		}
+	}
+	if m.SipAuthDataItem != nil {
+		if err := m.SipAuthDataItem.Validate(); err != nil {
+			return diam.InGroup(err, 612)
+		}
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.

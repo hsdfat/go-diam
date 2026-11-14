@@ -85,6 +85,44 @@ func CheckUnknown(unknown []RawAVP) error {
 	return nil
 }
 
+// CheckUnknownError is CheckUnknown for an answer with the E bit. RFC 6733
+// §7.2 says such an answer follows the answer-message grammar, not the
+// command's, so the AVPs that grammar names (Session-Id, Origin-Host,
+// Origin-Realm, Result-Code, Origin-State-Id, Error-Message,
+// Error-Reporting-Host, Failed-AVP, Experimental-Result, Proxy-Info) are
+// never unknown in it, even when the command's grammar does not list them.
+func CheckUnknownError(unknown []RawAVP) error {
+	for _, a := range unknown {
+		if a.Vendor == 0 && answerMessageAVP(a.Code) {
+			continue
+		}
+		if a.Mandatory() {
+			return &AVPError{ResultCode: ResultAVPUnsupported, AVP: a, Msg: "unsupported mandatory AVP"}
+		}
+	}
+	return nil
+}
+
+// answerMessageAVP reports whether the base protocol AVP with this code is
+// named by the answer-message grammar of RFC 6733 §7.2.
+func answerMessageAVP(code uint32) bool {
+	switch code {
+	case 263, 264, 296, 268, 278, 281, 294, 279, 297, 284:
+		return true
+	}
+	return false
+}
+
+// HasAVP reports whether avps holds an AVP with this code and vendor.
+func HasAVP(avps []RawAVP, code, vendor uint32) bool {
+	for _, a := range avps {
+		if a.Code == code && a.Vendor == vendor {
+			return true
+		}
+	}
+	return false
+}
+
 // InGroup records that err was found inside the grouped AVP with the given
 // code. For an *AVPError it returns a copy with code prepended to Path; any
 // other error is returned unchanged.

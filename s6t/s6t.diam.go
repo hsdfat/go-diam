@@ -8322,12 +8322,16 @@ type ConfigurationInformationAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *ConfigurationInformationAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.Drmp.Set {
 		b, s = diam.BeginAVP(b, 301, 0, 0)
 		b = diam.AppendInteger32(b, int32(m.Drmp.V))
@@ -8348,15 +8352,21 @@ func (m *ConfigurationInformationAnswer) AppendAVPs(b []byte) []byte {
 		b = m.ExperimentalResult.AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
-	b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
-	b = diam.AppendInteger32(b, int32(m.AuthSessionState))
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
+		b = diam.AppendInteger32(b, int32(m.AuthSessionState))
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.OcSupportedFeatures != nil {
 		b, s = diam.BeginAVP(b, 621, 0, 0)
 		b = m.OcSupportedFeatures.AppendAVPs(b)
@@ -8809,6 +8819,9 @@ func (m *ConfigurationInformationAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -8905,6 +8918,104 @@ func (m *ConfigurationInformationAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *ConfigurationInformationAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.ResultCode.Set) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.VendorSpecificApplicationId != nil {
+		if err := m.VendorSpecificApplicationId.Validate(); err != nil {
+			return diam.InGroup(err, 260)
+		}
+	}
+	if m.ExperimentalResult != nil {
+		if err := m.ExperimentalResult.Validate(); err != nil {
+			return diam.InGroup(err, 297)
+		}
+	}
+	if m.OcSupportedFeatures != nil {
+		if err := m.OcSupportedFeatures.Validate(); err != nil {
+			return diam.InGroup(err, 621)
+		}
+	}
+	if m.OcOlr != nil {
+		if err := m.OcOlr.Validate(); err != nil {
+			return diam.InGroup(err, 623)
+		}
+	}
+	for i := range m.Load {
+		if err := m.Load[i].Validate(); err != nil {
+			return diam.InGroup(err, 650)
+		}
+	}
+	for i := range m.SupportedFeatures {
+		if err := m.SupportedFeatures[i].Validate(); err != nil {
+			return diam.InGroup(err, 628)
+		}
+	}
+	if m.UserIdentifier != nil {
+		if err := m.UserIdentifier.Validate(); err != nil {
+			return diam.InGroup(err, 3102)
+		}
+	}
+	for i := range m.MonitoringEventReport {
+		if err := m.MonitoringEventReport[i].Validate(); err != nil {
+			return diam.InGroup(err, 3123)
+		}
+	}
+	for i := range m.MonitoringEventConfigStatus {
+		if err := m.MonitoringEventConfigStatus[i].Validate(); err != nil {
+			return diam.InGroup(err, 3142)
+		}
+	}
+	for i := range m.AeseCommunicationPatternConfigStatus {
+		if err := m.AeseCommunicationPatternConfigStatus[i].Validate(); err != nil {
+			return diam.InGroup(err, 3120)
+		}
+	}
+	for i := range m.SupportedServices {
+		if err := m.SupportedServices[i].Validate(); err != nil {
+			return diam.InGroup(err, 3143)
+		}
+	}
+	if m.EnhancedCoverageRestrictionData != nil {
+		if err := m.EnhancedCoverageRestrictionData.Validate(); err != nil {
+			return diam.InGroup(err, 3156)
+		}
+	}
+	for i := range m.ImsiGroupId {
+		if err := m.ImsiGroupId[i].Validate(); err != nil {
+			return diam.InGroup(err, 1675)
+		}
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	if m.SuggestedNetworkConfiguration != nil {
+		if err := m.SuggestedNetworkConfiguration.Validate(); err != nil {
+			return diam.InGroup(err, 3170)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -9472,12 +9583,16 @@ type ReportingInformationAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *ReportingInformationAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.Drmp.Set {
 		b, s = diam.BeginAVP(b, 301, 0, 0)
 		b = diam.AppendInteger32(b, int32(m.Drmp.V))
@@ -9498,15 +9613,21 @@ func (m *ReportingInformationAnswer) AppendAVPs(b []byte) []byte {
 		b = m.ExperimentalResult.AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
-	b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
-	b = diam.AppendInteger32(b, int32(m.AuthSessionState))
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
+		b = diam.AppendInteger32(b, int32(m.AuthSessionState))
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	for i := range m.SupportedFeatures {
 		b, s = diam.BeginAVP(b, 628, 0, 10415)
 		b = (&m.SupportedFeatures[i]).AppendAVPs(b)
@@ -9729,6 +9850,9 @@ func (m *ReportingInformationAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -9775,6 +9899,54 @@ func (m *ReportingInformationAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *ReportingInformationAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.ResultCode.Set) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.VendorSpecificApplicationId != nil {
+		if err := m.VendorSpecificApplicationId.Validate(); err != nil {
+			return diam.InGroup(err, 260)
+		}
+	}
+	if m.ExperimentalResult != nil {
+		if err := m.ExperimentalResult.Validate(); err != nil {
+			return diam.InGroup(err, 297)
+		}
+	}
+	for i := range m.SupportedFeatures {
+		if err := m.SupportedFeatures[i].Validate(); err != nil {
+			return diam.InGroup(err, 628)
+		}
+	}
+	for i := range m.MonitoringEventReportStatus {
+		if err := m.MonitoringEventReportStatus[i].Validate(); err != nil {
+			return diam.InGroup(err, 3171)
+		}
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.
@@ -10361,12 +10533,16 @@ type NiddInformationAnswer struct {
 }
 
 // AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in
-// grammar order, then Unknown. Required AVPs are always written.
+// grammar order, then Unknown. Required AVPs are always written, except
+// in a decoded answer with the E bit: it follows the answer-message
+// grammar of RFC 6733 §7.2, so only the AVPs it had are written.
 func (m *NiddInformationAnswer) AppendAVPs(b []byte) []byte {
 	var s int
-	b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
-	b = append(b, m.SessionId...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<0) != 0 {
+		b, s = diam.BeginAVP(b, 263, diam.AVPFlagMandatory, 0)
+		b = append(b, m.SessionId...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.Drmp.Set {
 		b, s = diam.BeginAVP(b, 301, 0, 0)
 		b = diam.AppendInteger32(b, int32(m.Drmp.V))
@@ -10387,15 +10563,21 @@ func (m *NiddInformationAnswer) AppendAVPs(b []byte) []byte {
 		b = m.ExperimentalResult.AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
-	b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
-	b = diam.AppendInteger32(b, int32(m.AuthSessionState))
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginHost...)
-	b = diam.EndAVP(b, s)
-	b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
-	b = append(b, m.OriginRealm...)
-	b = diam.EndAVP(b, s)
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<1) != 0 {
+		b, s = diam.BeginAVP(b, 277, diam.AVPFlagMandatory, 0)
+		b = diam.AppendInteger32(b, int32(m.AuthSessionState))
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<2) != 0 {
+		b, s = diam.BeginAVP(b, 264, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginHost...)
+		b = diam.EndAVP(b, s)
+	}
+	if m.Header.Flags&diam.FlagError == 0 || !m.decoded || m.seen&(uint64(1)<<3) != 0 {
+		b, s = diam.BeginAVP(b, 296, diam.AVPFlagMandatory, 0)
+		b = append(b, m.OriginRealm...)
+		b = diam.EndAVP(b, s)
+	}
 	if m.OcSupportedFeatures != nil {
 		b, s = diam.BeginAVP(b, 621, 0, 0)
 		b = m.OcSupportedFeatures.AppendAVPs(b)
@@ -10712,6 +10894,9 @@ func (m *NiddInformationAnswer) Validate() error {
 	if m.excess != nil {
 		return m.excess
 	}
+	if m.Header.Flags&diam.FlagError != 0 {
+		return m.validateError()
+	}
 	if m.decoded && m.seen&(uint64(1)<<0) == 0 {
 		return diam.Missing(263, 0, "SESSION_ID")
 	}
@@ -10778,6 +10963,74 @@ func (m *NiddInformationAnswer) Validate() error {
 		}
 	}
 	return diam.CheckUnknown(m.Unknown)
+}
+
+// validateError checks an answer with the E bit against the answer-message
+// grammar of RFC 6733 §7.2, which it follows instead of its command's.
+func (m *NiddInformationAnswer) validateError() error {
+	if m.decoded && !(m.seen&(uint64(1)<<2) != 0) {
+		return diam.Missing(264, 0, "ORIGIN_HOST")
+	}
+	if m.decoded && !(m.seen&(uint64(1)<<3) != 0) {
+		return diam.Missing(296, 0, "ORIGIN_REALM")
+	}
+	if m.decoded && !(m.ResultCode.Set) {
+		return diam.Missing(268, 0, "RESULT_CODE")
+	}
+	if m.misplaced != nil {
+		return m.misplaced
+	}
+	if m.VendorSpecificApplicationId != nil {
+		if err := m.VendorSpecificApplicationId.Validate(); err != nil {
+			return diam.InGroup(err, 260)
+		}
+	}
+	if m.ExperimentalResult != nil {
+		if err := m.ExperimentalResult.Validate(); err != nil {
+			return diam.InGroup(err, 297)
+		}
+	}
+	if m.OcSupportedFeatures != nil {
+		if err := m.OcSupportedFeatures.Validate(); err != nil {
+			return diam.InGroup(err, 621)
+		}
+	}
+	if m.OcOlr != nil {
+		if err := m.OcOlr.Validate(); err != nil {
+			return diam.InGroup(err, 623)
+		}
+	}
+	for i := range m.Load {
+		if err := m.Load[i].Validate(); err != nil {
+			return diam.InGroup(err, 650)
+		}
+	}
+	for i := range m.SupportedFeatures {
+		if err := m.SupportedFeatures[i].Validate(); err != nil {
+			return diam.InGroup(err, 628)
+		}
+	}
+	if m.NiddAuthorizationResponse != nil {
+		if err := m.NiddAuthorizationResponse.Validate(); err != nil {
+			return diam.InGroup(err, 3151)
+		}
+	}
+	for i := range m.GroupUserIdentifier {
+		if err := m.GroupUserIdentifier[i].Validate(); err != nil {
+			return diam.InGroup(err, 3177)
+		}
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
+		}
+	}
+	for i := range m.ProxyInfo {
+		if err := m.ProxyInfo[i].Validate(); err != nil {
+			return diam.InGroup(err, 284)
+		}
+	}
+	return diam.CheckUnknownError(m.Unknown)
 }
 
 // DiamHeader implements diam.Message.

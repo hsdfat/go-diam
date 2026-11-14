@@ -82,3 +82,35 @@ func TestCheckUnknown(t *testing.T) {
 		t.Fatalf("AVP = %+v, want the first M-set unknown AVP", ae.AVP)
 	}
 }
+
+func TestCheckUnknownError(t *testing.T) {
+	// Every AVP the answer-message grammar of RFC 6733 §7.2 names is part
+	// of an error answer, whatever the command's grammar lists.
+	named := []RawAVP{
+		{Code: 263, Flags: AVPFlagMandatory}, {Code: 264, Flags: AVPFlagMandatory},
+		{Code: 296, Flags: AVPFlagMandatory}, {Code: 268, Flags: AVPFlagMandatory},
+		{Code: 278, Flags: AVPFlagMandatory}, {Code: 281, Flags: AVPFlagMandatory},
+		{Code: 294, Flags: AVPFlagMandatory}, {Code: 279, Flags: AVPFlagMandatory},
+		{Code: 297, Flags: AVPFlagMandatory}, {Code: 284, Flags: AVPFlagMandatory},
+	}
+	if err := CheckUnknownError(named); err != nil {
+		t.Fatal(err)
+	}
+	// Anything else is under *[ AVP ] and follows the M-bit rule; a vendor
+	// AVP with one of those codes is another AVP.
+	err := CheckUnknownError(append(named, RawAVP{Code: 268, Vendor: 10415, Flags: AVPFlagMandatory | AVPFlagVendor}))
+	if ae := wantResult(t, err, ResultAVPUnsupported); ae.AVP.Code != 268 || ae.AVP.Vendor != 10415 {
+		t.Fatalf("AVP = %+v, want the vendor AVP", ae.AVP)
+	}
+	wantResult(t, CheckUnknownError([]RawAVP{{Code: 1, Flags: AVPFlagMandatory}}), ResultAVPUnsupported)
+}
+
+func TestHasAVP(t *testing.T) {
+	avps := []RawAVP{{Code: 268}, {Code: 1, Vendor: 10415}}
+	if !HasAVP(avps, 268, 0) || !HasAVP(avps, 1, 10415) {
+		t.Fatal("present AVP not found")
+	}
+	if HasAVP(avps, 1, 0) || HasAVP(nil, 268, 0) {
+		t.Fatal("absent AVP found")
+	}
+}

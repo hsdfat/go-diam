@@ -70,8 +70,15 @@ func encodeOrder(fields []*field) []*field {
 }
 
 func genAppendAVPs(g *protogen.GeneratedFile, m *message) {
+	answer := m.cmd != nil && !m.cmd.GetRequest()
 	g.P("// AppendAVPs appends the AVPs of m: fixed-position AVPs, the others in")
-	g.P("// grammar order, then Unknown. Required AVPs are always written.")
+	if answer {
+		g.P("// grammar order, then Unknown. Required AVPs are always written, except")
+		g.P("// in a decoded answer with the E bit: it follows the answer-message")
+		g.P("// grammar of RFC 6733 §7.2, so only the AVPs it had are written.")
+	} else {
+		g.P("// grammar order, then Unknown. Required AVPs are always written.")
+	}
 	g.P("func (m *", m.name, ") AppendAVPs(b []byte) []byte {")
 	if len(m.fields) > 0 {
 		g.P("var s int")
@@ -83,7 +90,13 @@ func genAppendAVPs(g *protogen.GeneratedFile, m *message) {
 			if fd.grouped() {
 				v = "(&" + v + ")"
 			}
-			appendOne(g, fd, v)
+			if answer {
+				g.P("if m.Header.Flags&", diamIdent(g, "FlagError"), " == 0 || !m.decoded || m.seen&(uint64(1)<<", fd.reqBit, ") != 0 {")
+				appendOne(g, fd, v)
+				g.P("}")
+			} else {
+				appendOne(g, fd, v)
+			}
 		case optional:
 			if fd.grouped() {
 				g.P("if ", v, " != nil {")
