@@ -264,3 +264,17 @@
 # nothing to list. Its six AVPs are S6a dictionary entries, and go-diameter
 # has all of them (Terminal-Information, IMEI, Software-Version, 3GPP2-MEID
 # and Equipment-Status in its S13 application, DRMP in its base protocol).
+
+# SLh, proto/3gpp/ts29173/slh.proto. go-diameter has no SLh application;
+# of its 13 own entries go-diameter knows 3GPP-AAA-Server-Name (SWx),
+# Serving-Node, MME-Name, GMLC-Address and MME-Realm (Ro/Rf). Its other
+# AVPs (MSISDN, SGSN-Number, GMLC-Number, Supported-Features and its
+# members) are the S6a entries, imported, and go-diameter has all of them.
+2400 10415 LMSI
+2403 10415 MSC_NUMBER
+2404 10415 LCS_CAPABILITIES_SETS
+2406 10415 ADDITIONAL_SERVING_NODE
+2407 10415 PPR_ADDRESS
+2409 10415 SGSN_NAME
+2410 10415 SGSN_REALM
+2411 10415 RIA_FLAGS
