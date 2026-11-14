@@ -1,0 +1,12 @@
+# Open5GS HSS for go-diam's capture job. MongoDB runs next to it on the
+# runner's host network and holds one synthetic subscriber (subscriber.js).
+db_uri: mongodb://127.0.0.1/open5gs
+logger:
+  level: info
+
+global:
+  max:
+    ue: 64
+
+hss:
+  freeDiameter: /etc/open5gs/hss.conf

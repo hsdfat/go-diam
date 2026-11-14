@@ -1,6 +1,7 @@
-# Exchanges CER/CEA, DWR/DWA and DPR/DPA with freeDiameter and publishes the
-# frames it sent as an artifact. A maintainer downloads the artifact and
-# commits it under testdata/captures/base/, where TestCaptures replays it.
+# Talks to independent open-source Diameter peers and publishes the frames
+# they sent as artifacts: the base protocol with freeDiameter, S6a and Cx
+# with the Open5GS HSS. A maintainer downloads an artifact and commits it
+# under testdata/captures/<dir>/, where TestCaptures replays it.
 name: peer
 
 on:
@@ -34,12 +35,81 @@ jobs:
         working-directory: internal/interop
         env:
           DIAM_PEER_ADDR: 127.0.0.1:3868
-        run: go test -tags peer -run TestPeer -v . -update
+        run: go test -tags peer -run 'TestPeer$' -v . -update
       - name: Peer log
         if: always()
         run: docker logs peer
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: captures-base
           path: testdata/captures/base/
           if-no-files-found: error
+
+  open5gs:
+    runs-on: ubuntu-latest
+    env:
+      MONGO_IMAGE: mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the HSS image
+        uses: docker/build-push-action@v6
+        with:
+          context: ci/open5gs
+          tags: go-diam-open5gs
+          load: true
+          cache-from: type=gha,scope=open5gs
+          cache-to: type=gha,mode=max,scope=open5gs
+      - name: Start MongoDB and provision the subscriber
+        run: |
+          docker run -d --name mongo --network host -v "$PWD/ci/open5gs:/ci:ro" "$MONGO_IMAGE"
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval 'db.runCommand({ping: 1}).ok' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec mongo mongosh --quiet mongodb://127.0.0.1/open5gs /ci/subscriber.js
+      - name: Start the Open5GS HSS
+        run: |
+          docker run -d --name hss --network host go-diam-open5gs
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/3868) 2>/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs hss
+          exit 1
+      - name: S6a with the HSS
+        working-directory: internal/interop
+        env:
+          DIAM_HSS_ADDR: 127.0.0.1:3868
+          DIAM_PEER_SOFTWARE: Open5GS v2.8.0 open5gs-hssd, upstream commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, built from source
+          DIAM_PEER_IMAGE: ci/open5gs/Dockerfile (ubuntu:noble-20261024.1), MongoDB ${{ env.MONGO_IMAGE }}
+        run: go test -tags peer -run 'TestPeerS6a$' -v . -update
+      - name: Cx with the HSS
+        if: success() || failure()
+        working-directory: internal/interop
+        env:
+          DIAM_HSS_ADDR: 127.0.0.1:3868
+          DIAM_PEER_SOFTWARE: Open5GS v2.8.0 open5gs-hssd, upstream commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, built from source
+          DIAM_PEER_IMAGE: ci/open5gs/Dockerfile (ubuntu:noble-20261024.1), MongoDB ${{ env.MONGO_IMAGE }}
+        run: go test -tags peer -run 'TestPeerCx$' -v . -update
+      - name: Peer log
+        if: always()
+        run: |
+          docker logs hss || true
+          docker exec mongo mongosh --quiet mongodb://127.0.0.1/open5gs --eval 'printjson(db.subscribers.find({}, {_id: 0, security: 0}).toArray())' || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: captures-s6a
+          path: testdata/captures/s6a/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: captures-cx
+          path: testdata/captures/cx/
+          if-no-files-found: warn
