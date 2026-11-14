@@ -553,3 +553,28 @@ The text above is unchanged; these win.
   DIAMETER_SUCCESS. The grammars (§7.3.3, §7.2.20) have all of these
   optional and the rules have no Result-Code of their own, so `Validate`
   checks the grammar only.
+- **SLh release, and a dictionary partly imported.** SLh is transcribed
+  from TS 29.173 V18.0.0, the latest Release 18 version. SLh starts in
+  Release 9, so the §5.3a reference is V9.4.0 instead of Release 8: every
+  required AVP is required there too, and later releases added only
+  optional ones (SGSN-Name, SGSN-Realm, RIA-Flags). Table 6.4.1/2 re-uses
+  AVPs without giving them a flag rule, so the rule is the referenced
+  specification's; `s6a.proto` already holds MSISDN, SGSN-Number,
+  GMLC-Number and Supported-Features with exactly that rule, and
+  `slh.proto` imports it for them. It keeps its own dictionary for the
+  twelve AVPs of table 6.4.1/1, for 3GPP-AAA-Server-Name (TS 29.273, no
+  schema here yet), and for GMLC-Address, which S6a has with the M-bit
+  cleared (TS 29.272 table 7.3.1/2) and SLh with it set; the own entry
+  wins over the imported one (§5.3), and the generator needed no change.
+  The interop of §8 gate 3 is built AVP by AVP (`slhRestated` in
+  `internal/interop/slh_test.go`), since go-diameter v4.6.0 has no SLh
+  application. No benchmark.
+- **§5.3, Supported-Features on SLh.** TS 29.173 points to TS 29.229 for
+  the AVP but, unlike TS 29.329 §7.1, has no clause applying TS 29.229
+  §7.2.1. The flag rule is then "May", and it is sent with the M-bit
+  clear in requests and answers, as on S6a.
+- **§7, procedure rules are not grammar (SLh).** Table 5.2.1.1/1 wants
+  User-Name or MSISDN in a RIR, and table 5.2.1.1/2 ties the RIA AVPs
+  after Origin-Realm to DIAMETER_SUCCESS. The grammars have all of them
+  optional and the rules have no Result-Code of their own, so `Validate`
+  checks the grammar only.
