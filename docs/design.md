@@ -258,6 +258,8 @@ Encoding rules:
 - Fixed-position AVPs are emitted first, then the rest in field order, then
   `Unknown`.
 - Required scalar fields are always emitted, including zero values: CC-Request-Number 0 is valid.
+  Exception (§14): in a decoded answer with the E bit, a required AVP of
+  the command is emitted only if the answer had it.
 - `AppendMarshal` sets the command code and app-id from the schema and forces
   the R and P bits to the schema's values. Other header fields come from the
   user.
@@ -315,6 +317,10 @@ Result-Code and the offending AVP, ready for a Failed-AVP:
   `(diam.fixed)` is set. A misplaced Session-Id yields 5004 with that AVP.
 - Required-presence on hand-built messages is not checked. The zero value
   is a valid encoding for numbers, so there is nothing to check.
+- An answer with the E bit is checked against the answer-message grammar
+  of RFC 6733 §7.2, not its command's (§14): Origin-Host, Origin-Realm and
+  Result-Code are required, the AVPs answer-message names are never
+  unknown, positions and nested groups are checked as usual.
 
 ## 8. Correctness gate
 
@@ -703,3 +709,55 @@ The text above is unchanged; these win.
   where its ABNF writes 3308. The interop of §8 gate 3 is built AVP by AVP
   (`s6cRestated`), with `s6cM` applying the two table 5.3.3.1/2 M-bits on
   go-diameter's side; no benchmark.
+
+## 14. Deviations recorded with real peers
+
+Captures from the peer workflow (CONTRIBUTING, Captures) that did not
+replay at first, and what settled each. Frames of a peer deviation are in
+`testdata/deviations/<dir>/`, checked by `TestDeviations`.
+
+- **go-diam was wrong: error answers (§7).** The Open5GS HSS (v2.8.0)
+  answers a NOR with Result-Code 3001 and the E bit, and the NOA carries
+  Session-Id, Origin-Host, Origin-Realm, Result-Code and Error-Message,
+  but no Auth-Session-State. `Validate` held it to the NOA grammar and
+  reported 5005, and re-encoding added an Auth-Session-State of 0 the peer
+  never sent. RFC 6733 §7.2: an answer with the E bit "will not conform to
+  the CCF specification for the command" but to the answer-message one.
+  The generator now gives every answer command a `validateError` used when
+  the E bit is set (Origin-Host, Origin-Realm, Result-Code required, as a
+  field or in `Unknown`; Session-Id, Origin-State-Id, Error-Message,
+  Error-Reporting-Host, Failed-AVP, Experimental-Result and Proxy-Info not
+  unknown, via `diam.CheckUnknownError`), and `AppendAVPs` writes a
+  required AVP of a decoded error answer only if it was there. Tested in
+  `internal/gentest/answer_test.go` and on the real frames.
+- **Peer deviation: P bit of error answers.** freeDiameter (Debian
+  bookworm package, firmware 10201) answers an STR, ASR or RAR it has no
+  application for with Result-Code 3007 and the E bit, and the Open5GS HSS
+  (freeDiameter 1.5.0 inside) answers NOR with 3001 the same way; all four
+  answers clear the P bit although the requests set it (the grammars of
+  those commands have PXY). RFC 6733 §6.2: "The 'P' bit is set to the same
+  value as the one in the request"; §7.2 repeats it for error answers. The
+  `[, PXY]` of the answer-message CCF does not override that: it is
+  optional because the request may not have it. go-diam keeps encoding the
+  grammar's P bit, so these frames re-encode with the P bit set; they are
+  kept in `testdata/deviations/base` (sta, asa, raa) and
+  `testdata/deviations/s6a` (noa), and `TestDeviations` checks that they
+  decode, pass `Validate`, re-encode to the same AVPs and differ only in
+  that bit. They do not count as captures of STR/STA, ASR/ASA, RAR/RAA or
+  NOR/NOA.
+- **Peer behaviour, no codec impact: Cx private identity.** Open5GS v2.8.0
+  answers a UAR whose User-Name is the IMSI-derived private identity of
+  TS 23.003 §13.3 (`<IMSI>@ims.mnc<MNC>.mcc<MCC>.3gppnetwork.org`) with
+  Experimental-Result 5005 (DIAMETER_ERROR_IDENTITY_ALREADY_REGISTERED,
+  TS 29.229 §6.2.2.5) and logs "Invalid User-Name BCD"; it accepts the bare
+  IMSI. The Cx captures use the bare IMSI. The 5005 answer decodes and
+  validates; it is logged by the peer test, not committed.
+- **Peer behaviour, no codec impact: SWx authentication scheme.** TS 29.273
+  table 8.1.2.1.1/2 allows EAP-AKA and EAP-AKA' in SIP-Authentication-Scheme.
+  Open5GS v2.8.0 answers EAP-AKA' (with ANID "WLAN") with
+  Experimental-Result 5006 (DIAMETER_ERROR_AUTH_SCHEME_NOT_SUPPORTED) and
+  EAP-AKA with a vector. The SWx MAA capture is the EAP-AKA one.
+- **Equality of real-peer captures (§8 gate 4).** No capture from Open5GS
+  or freeDiameter re-encodes byte-identically except freeDiameter's DWA:
+  the peers do not send grammar order. All of them re-encode to the same
+  multiset of AVPs with the same flags, which is the gate for real peers.

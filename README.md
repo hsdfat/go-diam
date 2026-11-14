@@ -27,7 +27,7 @@ ulr := &s6a.UpdateLocationRequest{
 b, err := ulr.Marshal()
 ```
 
-> **Status: pre-release, wave 1 transcribed but not yet verified against real peers.** What is in the repository
+> **Status: pre-release, wave 1 transcribed, real-peer captures for part of it, nothing verified yet.** What is in the repository
 > today: the runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`), the
 > RFC 6733 base protocol (`base`), S6a/S6d and S13/S13' from TS 29.272
 > (`s6a`, `s13`), Cx/Dx from TS 29.229 (`cx`), Sh/Dh from TS 29.329
@@ -36,9 +36,12 @@ b, err := ulr.Marshal()
 > TS 29.109 (`zh`), each tested in both directions against
 > fiorix/go-diameter (for Cx, Sh, S6t, S6m, S6c, SLh and Zh, which
 > go-diameter has no dictionary for, AVP by AVP; see [Coverage](#coverage)).
-> Captures from freeDiameter are committed for three of the six base command
-> pairs (CEA, DWA, DPA) and none for the 3GPP applications, so all eleven
-> are still *spec-only*. The API may still change before `v1.0.0`.
+> Captures from real peers cover three of the six base command pairs (CEA,
+> DWA, DPA from freeDiameter), four of the eight S6a pairs, four of the six
+> Cx pairs and two of the four SWx pairs (from the Open5GS HSS), and none
+> of the other 3GPP applications. No application has a capture for
+> every command pair, so all eleven are still *spec-only*. The API may
+> still change before `v1.0.0`.
 
 The same with the base protocol:
 
@@ -347,20 +350,20 @@ Statuses:
 
 - **verified**: all six gates below pass, including captures from a real
   peer.
-- **spec-only**: transcribed and cross-checked, but no capture from a real
-  peer is committed.
+- **spec-only**: transcribed and cross-checked, but not every command pair
+  has a capture from a real peer (the row says which have one).
 - **partial**: some commands missing.
 - **prototype**: exists on the `spike/proto3-codegen` branch only.
 - **planned**: not started.
 
 | Application | Spec | Wave | Status |
 |---|---|---|---|
-| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; CEA, DWA and DPA captured from freeDiameter and replayed (`testdata/captures/base`), no capture for RAR/RAA, STR/STA, ASR/ASA |
-| S6a/S6d (ULR/ULA, AIR/AIA, CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA) | TS 29.272 V18.7.0 | 1 | spec-only: all 16 commands byte-identical with go-diameter in both directions (on the AVPs go-diameter knows), full Subscription-Data, fuzzed; 146 of 314 dictionary entries cross-checked, the 168 go-diameter lacks are listed in `internal/interop/testdata/dictcheck-absent.txt`; no peer capture yet |
-| Cx/Dx (UAR/UAA, SAR/SAA, LIR/LIA, MAR/MAA, RTR/RTA, PPR/PPA) | TS 29.229 V18.1.0 | 1 | spec-only: all 12 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no Cx application: its side is built from the Cx AVPs it defines under SWx, Ro/Rf, Rx, S6a, NASREQ and base, and decodes each AVP in the application that defines it; the 48 AVPs it defines nowhere (Public-Identity, Digest-*, the restoration and P-CSCF AVPs, ...) carry codes and flags restated from the spec in the test. 37 of 85 dictionary entries cross-checked, the 48 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Cx as opaque AVPs, not a like-for-like comparison); no peer capture yet |
+| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; CEA, DWA and DPA captured from freeDiameter and replayed (`testdata/captures/base`); CEA also from the Open5GS HSS (`testdata/captures/s6a`, `cx`, `swx`). No capture for RAR/RAA, STR/STA, ASR/ASA: freeDiameter answers them only with 3007 error answers that clear the P bit, kept as reviewed deviations in `testdata/deviations/base` (decode, validate and re-encode to the same AVPs; header differs in the P bit only) |
+| S6a/S6d (ULR/ULA, AIR/AIA, CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA) | TS 29.272 V18.7.0 | 1 | spec-only: all 16 commands byte-identical with go-diameter in both directions (on the AVPs go-diameter knows), full Subscription-Data, fuzzed; 146 of 314 dictionary entries cross-checked, the 168 go-diameter lacks are listed in `internal/interop/testdata/dictcheck-absent.txt`; captured from the Open5GS HSS (v2.8.0) and replayed (`testdata/captures/s6a`): AIA with an E-UTRAN vector, AIA with Experimental-Result 5001, ULA with Subscription-Data, PUA, and a CLR the HSS sent; no capture for IDR/IDA, DSR/DSA, RSR/RSA, NOR/NOA, and none of the requests (ULR, AIR, PUR) or CLA, since only frames the peer sent are captured. The HSS answers NOR with a 3001 error answer that clears the P bit, kept as a reviewed deviation in `testdata/deviations/s6a` |
+| Cx/Dx (UAR/UAA, SAR/SAA, LIR/LIA, MAR/MAA, RTR/RTA, PPR/PPA) | TS 29.229 V18.1.0 | 1 | spec-only: all 12 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no Cx application: its side is built from the Cx AVPs it defines under SWx, Ro/Rf, Rx, S6a, NASREQ and base, and decodes each AVP in the application that defines it; the 48 AVPs it defines nowhere (Public-Identity, Digest-*, the restoration and P-CSCF AVPs, ...) carry codes and flags restated from the spec in the test. 37 of 85 dictionary entries cross-checked, the 48 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Cx as opaque AVPs, not a like-for-like comparison); captured from the Open5GS HSS (v2.8.0) and replayed (`testdata/captures/cx`): UAA, MAA (one Digest-AKAv1-MD5 SIP-Auth-Data-Item), SAA with User-Data, LIA; no capture for RTR/RTA, PPR/PPA (HSS-initiated, not triggered) |
 | Sh/Dh (UDR/UDA, PUR/PUA, SNR/SNA, PNR/PNA) | TS 29.329 V18.0.0 | 1 | spec-only: all 8 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands and Wildcarded-IMPU, fuzzed. go-diameter has no Sh application: its side is built from the Sh AVPs it defines under Ro/Rf, Rx, SWx and base (MSISDN, Server-Name, Session-Priority, Supported-Features, DRMP, OC-\*, Load), and decodes each AVP in the application that defines it; the 26 AVPs it defines nowhere (User-Identity, User-Data, Data-Reference, Wildcarded-IMPU, External-Identifier, ...) carry codes and flags restated from the spec in the test. 18 of 45 dictionary entries cross-checked, the 27 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Sh as opaque AVPs); no peer capture yet |
 | S13/S13' (ECR/ECA) | TS 29.272 V18.7.0 | 1 | spec-only: both commands byte-identical with go-diameter in both directions, built from go-diameter's S13 dictionary (16777252), including an EQUIPMENT_UNKNOWN (5422) answer and 3GPP2-MEID, fuzzed, benchmarked (ECR). No dictionary of its own: `s13.proto` imports the S6a schema, so its 6 AVPs (Terminal-Information, IMEI, Software-Version, 3GPP2-MEID, Equipment-Status, DRMP) are S6a dictionary entries; all 6 are cross-checked against go-diameter and agree, none is missing from it, and the 0 new entries add nothing to `internal/interop/testdata/dictcheck-absent.txt`. go-diameter's S13 grammar makes User-Name required where TS 29.272 §7.2.19 has it optional; no peer capture yet |
-| SWx (MAR/MAA, PPR/PPA, SAR/SAA, RTR/RTA) | TS 29.273 V18.6.0 | 1 | spec-only: all 8 commands byte-identical with go-diameter in both directions, built from go-diameter's SWx dictionary (16777265), including a full Non-3GPP-User-Data, Access-Network-Info and an unknown-user SAA, fuzzed, benchmarked (MAA). go-diameter's SWx application is the Release 9 one: it has no PPR/PPA command (it still reads them), 13 AVPs of the samples are built from its other applications and 20 it defines nowhere (PPR-Flags, TWAN-\*, Access-Network-Info, ERP-Authorization, Local-Time-Zone, ...) carry codes and flags restated from the spec in the test. Its own dictionary has 35 entries, the other re-used AVPs come from the Cx and S6a schemas: 21 of the 35 cross-checked against go-diameter (one reviewed M-bit disagreement, AN-Trusted), the 14 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no peer capture yet |
+| SWx (MAR/MAA, PPR/PPA, SAR/SAA, RTR/RTA) | TS 29.273 V18.6.0 | 1 | spec-only: all 8 commands byte-identical with go-diameter in both directions, built from go-diameter's SWx dictionary (16777265), including a full Non-3GPP-User-Data, Access-Network-Info and an unknown-user SAA, fuzzed, benchmarked (MAA). go-diameter's SWx application is the Release 9 one: it has no PPR/PPA command (it still reads them), 13 AVPs of the samples are built from its other applications and 20 it defines nowhere (PPR-Flags, TWAN-\*, Access-Network-Info, ERP-Authorization, Local-Time-Zone, ...) carry codes and flags restated from the spec in the test. Its own dictionary has 35 entries, the other re-used AVPs come from the Cx and S6a schemas: 21 of the 35 cross-checked against go-diameter (one reviewed M-bit disagreement, AN-Trusted), the 14 others listed in `internal/interop/testdata/dictcheck-absent.txt`; captured from the Open5GS HSS (v2.8.0) and replayed (`testdata/captures/swx`): MAA (EAP-AKA; the HSS answers EAP-AKA' with 5006) and SAA with Non-3GPP-User-Data; no capture for PPR/PPA, RTR/RTA (HSS-initiated, not triggered) |
 | S6t (CIR/CIA, RIR/RIA, NIR/NIA) | TS 29.336 V18.2.0 | 1 | spec-only: all 6 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no S6t application: its side is built from the S6t AVPs it defines under S6a, S13, SWx, Ro/Rf, Rx and base (Terminal-Information, Visited-PLMN-Id, PDN-Type, Served-Party-IP-Address, User-CSG-Information, MSISDN, Charged-Party, Supported-Features, Service-Selection, DRMP, OC-\*, Load, ...), and decodes each AVP in the application that defines it; the 109 AVPs it defines nowhere (User-Identifier, External-Identifier, the Monitoring-Event, AESE, NIDD, group-report and location AVPs, ...) carry codes and flags restated from the spec in the test. 31 of 140 dictionary entries cross-checked, with 3 M-bit disagreements where TS 29.336 table 8.4.1-2 clears the bit (listed in `internal/interop/testdata/dictcheck-allow.txt`), the 109 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6t as opaque AVPs); no peer capture yet |
 | S6m/S6n (SIR/SIA) | TS 29.336 V18.2.0 | 1 | spec-only: both commands byte-identical with go-diameter in both directions, every grouped AVP of the commands and every Serving-Node member, fuzzed. go-diameter has no S6m application: its side is built from the S6m AVPs it defines under Ro/Rf, S6a and base (Serving-Node, MME-Name, MME-Realm, SGSN-Number, MME-Number-for-MT-SMS, Priority-Indication, Application-Port-Identifier, MSISDN, Supported-Features, DRMP, OC-\*, Load), and decodes each AVP in the application that defines it; the 19 AVPs it defines nowhere (User-Identifier, Service-Parameters, T4-Data, SIR-Flags, LMSI, MSC-Number, Additional-Serving-Node, the IP-SM-GW AVPs, SM-RP-SMEA, ...) carry codes and flags restated from the spec in the test. 23 of 42 dictionary entries cross-checked, with one name disagreement (go-diameter spells code 3010 Application-Port-Identifer, listed in `internal/interop/testdata/dictcheck-allow.txt`), the 19 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6m as opaque AVPs); no peer capture yet. Its own package, not shared with S6c: TS 29.338 is another specification, with its own AVP table and a longer Serving-Node grammar |
 | S6c (SRR/SRA, ALR/ALA, RDR/RDA) | TS 29.338 V18.2.0 | 1 | spec-only: all 6 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no S6c application: its side is built from the S6c AVPs it defines under Ro/Rf, S6a, Rx and base (Serving-Node, MME-Name, MME-Realm, SGSN-Number, MME-Number-for-MT-SMS, MSISDN, Supported-Features, DRMP), and decodes each AVP in the application that defines it; the 48 AVPs of the commands it defines nowhere (User-Identifier, SC-Address, SM-RP-\*, the delivery-outcome, absent-user, SMSF and IP-SM-GW AVPs, SMSMI-Correlation-ID, ...) carry codes and flags restated from the spec in the test. 10 of 61 dictionary entries cross-checked, with 2 M-bit disagreements where TS 29.338 table 5.3.3.1/2 sets the bit (listed in `internal/interop/testdata/dictcheck-allow.txt`), the 51 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6c as opaque AVPs); no peer capture yet |
@@ -408,11 +411,15 @@ evidence:
    are listed in the test with their code and flags restated from the
    specification.
 4. **Real captures.** Frames received from open-source peers running in CI
-   (freeDiameter for the base protocol; Open5GS and PyHSS are planned for
-   the 3GPP applications) are committed with their source and replayed: they
-   must decode, validate and re-encode to the same AVPs. Today that covers
-   CEA, DWA and DPA from freeDiameter; the base protocol stays spec-only
-   until the other three command pairs have a capture.
+   (freeDiameter for the base protocol, the Open5GS HSS for S6a, Cx and
+   SWx) are committed with their source and replayed: they must decode,
+   validate and re-encode to the same AVPs, flags included. Today that
+   covers CEA, DWA and DPA; AIA, ULA, PUA and a CLR (S6a); UAA, MAA, SAA
+   and LIA (Cx); MAA and SAA (SWx). An application stays spec-only until
+   every command pair has a capture. A peer frame that breaks the
+   specification in a way go-diam does not follow is kept in
+   `testdata/deviations` with the clause that settles it, and
+   `TestDeviations` checks that it still deviates only in that way.
 5. **Fuzzing.** `Unmarshal` must never panic, and encoding a decoded message,
    decoding that and encoding again must give the same bytes. Every command
    has a fuzz target, and CI runs each for a short budget.

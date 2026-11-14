@@ -106,13 +106,39 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
       from the specification, as `cxRestated` in
       `internal/interop/cx_test.go` does;
    4. at least one capture per command pair from an independent peer,
-      replayed by `TestCaptures`;
+      replayed by `TestCaptures` (see [Captures](#captures));
    5. a fuzz target per command, clean for 30 s locally and run in CI;
    6. a benchmark against go-diameter for at least one command.
 
    Without an independent peer or capture (gates 3 and 4) the application is
    *spec-only*. With commands missing it is *partial*. The coverage table in
    the README says which, and never more than the evidence supports.
+
+## Captures
+
+Captures come from the `peer` workflow (`.github/workflows/peer.yml`),
+which runs the open-source peers in CI only, never on a developer machine:
+freeDiameter (`ci/freediameter`, base protocol) and the Open5GS HSS
+(`ci/open5gs`, S6a, Cx and SWx, against MongoDB with one synthetic
+subscriber). The tests behind it are in `internal/interop/peer_test.go`
+and `peer_open5gs_test.go` (build tag `peer`); each answer is replayed as
+`TestCaptures` would, so a run's log says whether go-diam accepts it.
+Run the workflow on your branch (`gh workflow run peer.yml --ref <branch>`),
+download its artifacts and commit them under `testdata/captures/<dir>/`,
+with the `SOURCE` file the test writes (peer, software version, image,
+date, command). Pin every image and source revision the workflow uses.
+
+When a capture does not replay, settle it from the specification before
+changing anything. If go-diam is wrong, fix the schema or the generator. If
+the peer is wrong, do not bend go-diam: keep the frame under
+`testdata/deviations/<dir>/` with its `SOURCE`, record the deviation and
+its clause in `docs/design.md` §14, and make `TestDeviations` check that
+the frame deviates in exactly that way and no other. Today the only
+deviation it knows is an error answer with the P bit cleared.
+
+Only frames the peer sends are captured, so a command pair counts as
+covered by its answer, or by its request when the peer initiates it (the
+CLR from the HSS).
 
 ## Commits and pull requests
 
