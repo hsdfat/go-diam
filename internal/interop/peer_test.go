@@ -146,6 +146,20 @@ func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
 	return m
 }
 
+// probe sends req and reports on the answer like exchange, but only in the
+// log: the answer is not saved and a failed check is not a test failure. It
+// is for answers that are not committed as captures.
+func (p *peerConn) probe(name string, req diam.Message) diam.Message {
+	p.t.Helper()
+	frame := p.answer(p.send(req))
+	p.t.Logf("%s (probe): %d bytes: %x", name, len(frame), frame)
+	m, err := replay(frame)
+	if err != nil {
+		p.t.Logf("%s (probe): %v", name, err)
+	}
+	return m
+}
+
 // writeSource writes the SOURCE file of the capture directory.
 func (p *peerConn) writeSource(text string) {
 	p.t.Helper()
@@ -194,27 +208,29 @@ func TestPeer(t *testing.T) {
 	}
 
 	// freeDiameter has no application behind RAR, STR and ASR, so it answers
-	// each with a protocol error (E bit). Those answers are still frames of
-	// the peer, and their grammar is the command's own (RFC 6733 §7.2).
-	if sta, ok := p.exchange("sta", &base.SessionTerminationRequest{
-		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
-		DestinationRealm: realm, DestinationHost: diam.Some(string(cea.OriginHost)),
-		AuthApplicationId: 0, TerminationCause: base.TerminationCauseLogout,
-	}).(*base.SessionTerminationAnswer); ok {
-		t.Logf("STA: Result-Code %d, flags %#x", sta.ResultCode, sta.Header.Flags)
-	}
-	if asa, ok := p.exchange("asa", &base.AbortSessionRequest{
-		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
-		DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
-	}).(*base.AbortSessionAnswer); ok {
-		t.Logf("ASA: Result-Code %d, flags %#x", asa.ResultCode, asa.Header.Flags)
-	}
-	if raa, ok := p.exchange("raa", &base.ReAuthRequest{
-		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
-		DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
-		ReAuthRequestType: base.ReAuthRequestTypeAuthorizeOnly,
-	}).(*base.ReAuthAnswer); ok {
-		t.Logf("RAA: Result-Code %d, flags %#x", raa.ResultCode, raa.Header.Flags)
+	// each with a protocol error (E bit, 3007). It clears the P bit in those
+	// answers, where RFC 6733 §6.2 and §7.2 say the P bit is the request's,
+	// so they are probed here but not committed: see docs/design.md.
+	for _, req := range []struct {
+		name string
+		m    diam.Message
+	}{
+		{"sta", &base.SessionTerminationRequest{
+			Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+			DestinationRealm: realm, DestinationHost: diam.Some(string(cea.OriginHost)),
+			AuthApplicationId: 0, TerminationCause: base.TerminationCauseLogout,
+		}},
+		{"asa", &base.AbortSessionRequest{
+			Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+			DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
+		}},
+		{"raa", &base.ReAuthRequest{
+			Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+			DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
+			ReAuthRequestType: base.ReAuthRequestTypeAuthorizeOnly,
+		}},
+	} {
+		p.probe(req.name, req.m)
 	}
 
 	if dpa, ok := p.exchange("dpa", &base.DisconnectPeerRequest{

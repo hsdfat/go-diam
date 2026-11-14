@@ -142,25 +142,62 @@ func TestPeerS6a(t *testing.T) {
 		"aia.bin (AIA, one E-UTRAN vector), ula.bin (ULA with Subscription-Data),\n          aia-user-unknown.bin (AIA, Experimental-Result 5001), pua.bin (PUA)"))
 }
 
+// cxSuccess reports whether an answer carries a success code (RFC 6733
+// §7.1.2, TS 29.229 §6.2.1).
+func cxSuccess(rc diam.Opt[uint32], er *base.ExperimentalResult) bool {
+	if rc.Set {
+		return rc.V/1000 == 2
+	}
+	return er != nil && er.ExperimentalResultCode/1000 == 2
+}
+
 // TestPeerCx acts as an I-CSCF and S-CSCF towards the Open5GS HSS at
 // DIAM_HSS_ADDR: UAR/UAA, MAR/MAA, SAR/SAA and LIR/LIA for the IMS identities
-// of the provisioned subscriber (TS 23.003 §13.3, §13.4B).
+// of the provisioned subscriber.
+//
+// TS 23.003 §13.3 and §13.4B derive the private and public identities from
+// the IMSI when there is no ISIM; an HSS may provision others (MSISDN-based
+// ones). The test first probes which pair the HSS knows with a UAR, then
+// runs the sequence with it.
 func TestPeerCx(t *testing.T) {
 	const host, realm = "scscf.test", "test"
 	p := dialPeer(t, "DIAM_HSS_ADDR", host, realm, "cx")
 	cea := p.capabilities("cea", hssCER(p))
 	hss := string(cea.OriginHost)
 	vsai := base.VendorSpecificApplicationId{VendorId: tgpp, AuthApplicationId: diam.Some(uint32(cxApp))}
-	impi := hssIMSI + "@" + hssIMSDomain
-	impu := "sip:" + impi
 	serverName := "sip:" + host + ":6060"
+	const msisdn = "0000000001"
+	uar := func(impi, impu string) *cx.UserAuthorizationRequest {
+		return &cx.UserAuthorizationRequest{
+			Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
+			AuthSessionState: base.AuthSessionStateNoStateMaintained,
+			OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
+			UserName: impi, PublicIdentity: impu, VisitedNetworkIdentifier: []byte(hssIMSDomain),
+		}
+	}
 
-	if uaa, ok := p.exchange("uaa", &cx.UserAuthorizationRequest{
-		Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
-		AuthSessionState: base.AuthSessionStateNoStateMaintained,
-		OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
-		UserName: impi, PublicIdentity: impu, VisitedNetworkIdentifier: []byte(hssIMSDomain),
-	}).(*cx.UserAuthorizationAnswer); ok {
+	type ids struct{ impi, impu string }
+	candidates := []ids{
+		{hssIMSI + "@" + hssIMSDomain, "sip:" + hssIMSI + "@" + hssIMSDomain},
+		{hssIMSI + "@" + hssIMSDomain, "sip:" + msisdn + "@" + hssIMSDomain},
+		{hssIMSI + "@" + hssIMSDomain, "tel:" + msisdn},
+		{hssIMSI + "@" + hssIMSDomain, "tel:+" + msisdn},
+		{hssIMSI, "sip:" + hssIMSI + "@" + hssIMSDomain},
+		{msisdn + "@" + hssIMSDomain, "sip:" + msisdn + "@" + hssIMSDomain},
+	}
+	id := candidates[0]
+	for i, c := range candidates {
+		if uaa, ok := p.probe(fmt.Sprintf("uaa-candidate-%d", i), uar(c.impi, c.impu)).(*cx.UserAuthorizationAnswer); ok {
+			t.Logf("UAA for User-Name %q Public-Identity %q: %s", c.impi, c.impu, resultOf(uaa.ResultCode, uaa.ExperimentalResult))
+			if cxSuccess(uaa.ResultCode, uaa.ExperimentalResult) {
+				id = c
+				break
+			}
+		}
+	}
+	t.Logf("using User-Name %q Public-Identity %q", id.impi, id.impu)
+
+	if uaa, ok := p.exchange("uaa", uar(id.impi, id.impu)).(*cx.UserAuthorizationAnswer); ok {
 		t.Logf("UAA: %s", resultOf(uaa.ResultCode, uaa.ExperimentalResult))
 	}
 
@@ -168,34 +205,35 @@ func TestPeerCx(t *testing.T) {
 		Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
 		AuthSessionState: base.AuthSessionStateNoStateMaintained,
 		OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
-		UserName: impi, PublicIdentity: impu,
+		UserName: id.impi, PublicIdentity: id.impu,
 		SipAuthDataItem:    cx.SipAuthDataItem{SipAuthenticationScheme: diam.Some("Digest-AKAv1-MD5")},
 		SipNumberAuthItems: 1,
 		ServerName:         serverName,
 	}).(*cx.MultimediaAuthAnswer); ok {
-		t.Logf("MAA: %s", resultOf(maa.ResultCode, maa.ExperimentalResult))
+		t.Logf("MAA: %s, %d SIP-Auth-Data-Item", resultOf(maa.ResultCode, maa.ExperimentalResult), len(maa.SipAuthDataItem))
 	}
 
 	if saa, ok := p.exchange("saa", &cx.ServerAssignmentRequest{
 		Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
 		AuthSessionState: base.AuthSessionStateNoStateMaintained,
 		OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
-		UserName: diam.Some(impi), PublicIdentity: []string{impu},
+		UserName: diam.Some(id.impi), PublicIdentity: []string{id.impu},
 		ServerName:               serverName,
 		ServerAssignmentType:     cx.ServerAssignmentTypeRegistration,
 		UserDataAlreadyAvailable: cx.UserDataAlreadyAvailableUserDataNotAvailable,
 	}).(*cx.ServerAssignmentAnswer); ok {
-		t.Logf("SAA: %s", resultOf(saa.ResultCode, saa.ExperimentalResult))
+		t.Logf("SAA: %s, User-Data %q", resultOf(saa.ResultCode, saa.ExperimentalResult), saa.UserData.V)
 	}
 
 	if lia, ok := p.exchange("lia", &cx.LocationInfoRequest{
 		Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
 		AuthSessionState: base.AuthSessionStateNoStateMaintained,
 		OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
-		PublicIdentity: impu,
+		PublicIdentity: id.impu,
 	}).(*cx.LocationInfoAnswer); ok {
-		t.Logf("LIA: %s", resultOf(lia.ResultCode, lia.ExperimentalResult))
+		t.Logf("LIA: %s, Server-Name %q", resultOf(lia.ResultCode, lia.ExperimentalResult), lia.ServerName.V)
 	}
 
-	p.writeSource(open5gsSource(cea, "TestPeerCx", "uaa.bin (UAA), maa.bin (MAA), saa.bin (SAA), lia.bin (LIA)"))
+	p.writeSource(open5gsSource(cea, "TestPeerCx", fmt.Sprintf(
+		"uaa.bin (UAA), maa.bin (MAA), saa.bin (SAA), lia.bin (LIA), for\n          User-Name %q, Public-Identity %q", id.impi, id.impu)))
 }
