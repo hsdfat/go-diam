@@ -39,3 +39,6 @@
 848 10415 m TS 29.336 table 8.4.1-2: Served-Party-IP-Address "Must not set" in S6t; go-diameter has the TS 32.299 rule (V,M)
 1401 10415 m TS 29.336 table 8.4.1-2: Terminal-Information "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
 1456 10415 m TS 29.336 table 8.4.1-2: PDN-Type "Must not set" in S6t; go-diameter has the TS 29.272 rule (M,V)
+#
+# S6m/S6n (proto/3gpp/ts29336/s6m/s6m.proto, TS 29.336 V18.2.0).
+3010 10415 name TS 29.368 §6.4.11 and TS 29.336 §6.4.5 name this AVP Application-Port-Identifier; go-diameter spells it Application-Port-Identifer
