@@ -582,3 +582,24 @@ The text above is unchanged; these win.
   the S6t ABNFs leave it out. With the M-bit set it would land in Unknown
   and fail with 5001, the opposite of "ignore", so every S6t command
   carries it as optional after DRMP, where S6a puts it.
+- **S6m release, and a second application of one specification with its
+  own dictionary.** S6m/S6n is transcribed from TS 29.336 V18.2.0, the S6t
+  version, with V11.1.0 (the first version with IANA codes; S6m starts in
+  Release 11) as the oldest-release reference. Unlike S13 next to S6a, it
+  does not import the S6t file: TS 29.336 gives S6m and S6t separate AVP
+  tables (6.4.1/1-2 and 8.4.1-1-2), most S6m AVPs are not S6t entries, and
+  User-Identifier has another grammar on each application. So
+  `ts29336/s6m/s6m.proto` has its own `Avp` and `IetfAvp` dictionaries, in
+  a subdirectory because `godiam.s6t` owns the specification directory.
+  Table 6.4.1/2 has no M-bit column, so every re-used AVP carries its
+  defining specification's flag rule. The S6t rulings on
+  Vendor-Specific-Application-Id (§6.2.2 NOTE says the same) and
+  Supported-Features (§6.1.9) apply. The interop of §8 gate 3 is built AVP
+  by AVP (`s6mRestated`); no benchmark.
+- **S6m and S6c are two packages.** The roadmap names them together, as
+  the two SMS-related HSS interfaces, but they come from two
+  specifications (TS 29.336 and TS 29.338) with separate AVP tables,
+  application ids and releases, and TS 29.338 gives Serving-Node a longer
+  grammar (IP-SM-GW-SBI-Support-Indicator) than TS 29.336 does. One
+  application per proto file and package (C3) keeps them apart: `s6m` and
+  `s6c`.

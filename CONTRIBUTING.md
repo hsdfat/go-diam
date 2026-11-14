@@ -76,7 +76,8 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
    7.3.1/2), and the defining clause in a comment. An application whose
    AVPs all sit, with the same flags, in another application's dictionary
    from the same specification imports that file and has no dictionary of
-   its own (S13/S13' imports `s6a.proto`).
+   its own (S13/S13' imports `s6a.proto`); one whose AVP table differs has
+   its own dictionary even in the same specification (S6m/S6n next to S6t).
 3. **Generate** with `make generate` and commit the output.
 4. **Pass the gates.** An application is listed as *verified* only when all
    of these hold:
@@ -88,7 +89,7 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
       `internal/interop/testdata/dictcheck-absent.txt`;
    3. interop with go-diameter in both directions for every command, built
       on go-diameter's side from its own constants and dictionary. If
-      go-diameter has no dictionary for the application (Cx/Dx, Sh/Dh, S6t), use
+      go-diameter has no dictionary for the application (Cx/Dx, Sh/Dh, S6t, S6m), use
       its definitions of the AVPs from the applications that have them, and
       list the AVPs it defines nowhere with their code and flags restated
       from the specification, as `cxRestated` in
