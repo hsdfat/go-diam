@@ -1,5 +1,10 @@
 # go-diam
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/hsdfat/go-diam.svg)](https://pkg.go.dev/github.com/hsdfat/go-diam)
+[![ci](https://github.com/hsdfat/go-diam/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hsdfat/go-diam/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hsdfat/go-diam?sort=semver)](https://github.com/hsdfat/go-diam/releases)
+[![License](https://img.shields.io/github/license/hsdfat/go-diam)](LICENSE)
+
 Typed, code-generated Diameter codecs for Go.
 
 You describe Diameter commands and AVPs in **standard proto3 files**. The
