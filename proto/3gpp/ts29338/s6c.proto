@@ -1,0 +1,740 @@
+// S6c: HSS - central SMS functions (Diameter application 16777312).
+//
+// Source: 3GPP TS 29.338 V18.2.0 (Release 18), published as
+// ETSI TS 129 338 V18.2.0 (2024-05); the latest Release 18 version.
+//   Commands:      §5.3.2.2 table 5.3.2.2/1, §5.3.2.3-5.3.2.8 (SRR/SRA,
+//                  ALR/ALA, RDR/RDA)
+//   Application:   §4.8 (16777312, vendor 3GPP)
+//   AVP tables:    §5.3.3.1 table 5.3.3.1/1, all rows, and table 5.3.3.1/2
+//                  (the re-used AVPs and their S6c M-bit)
+//   Grouped AVPs:  §5.3.3.6-5.3.3.7, 5.3.3.14-5.3.3.18, 5.3.3.27-5.3.3.28,
+//                  5.3.3.35-5.3.3.36; §6.3.3.5 and 6.3.3.13 for the SGd
+//                  AVPs S6c re-uses
+//   Result codes:  §7.3 (5550-5558)
+//
+// The SGd/Gdd application of the same specification (16777313, OFR/OFA,
+// TFR/TFA) is not here. S6c is not in one package with S6m (TS 29.336):
+// the two come from different specifications with their own AVP tables,
+// and TS 29.338 gives Serving-Node a longer grammar than TS 29.336 does.
+//
+// AVPs that TS 29.338 re-uses are in this file's dictionaries too, as in
+// S6a, Sh and S6t. Table 5.3.3.1/2 NOTE 1 says its M-bit column overrides
+// the defining specification; where it is empty, the defining
+// specification's rule applies:
+//   TS 29.338 §6.3.3.2, 6.3.3.5-6.3.3.7, 6.3.3.13-6.3.3.16, table
+//                     6.3.3.1/1        SC-Address, SM-Delivery-Failure-Cause
+//                                      and its members (M, V);
+//                                      SMSMI-Correlation-ID, HSS-ID,
+//                                      Originating-SIP-URI,
+//                                      Destination-SIP-URI (V)
+//   TS 29.336 V18.2.0 table 6.4.1/1    User-Identifier, External-Identifier,
+//                                      IP-SM-GW-Number, -Name, -Realm (M, V);
+//                                      User-Identifier has its §6.4.2 grammar
+//   TS 29.329 V18.0.0 table 6.3.1      MSISDN (M, V)
+//   TS 29.173 V18.0.0 table 6.4.1/1    LMSI, Serving-Node, MME-Name,
+//                                      MSC-Number, Additional-Serving-Node
+//                                      (M, V); SGSN-Name, SGSN-Realm (V);
+//                                      MME-Realm (V; table 5.3.3.1/2: Must)
+//   TS 29.272 V18.7.0 table 7.3.1/1    SGSN-Number (M, V);
+//                                      MME-Number-for-MT-SMS (V; table
+//                                      5.3.3.1/2: Must)
+//   TS 29.229 V18.1.0 §6.3.29-6.3.31   Supported-Features, Feature-List-ID,
+//                                      Feature-List (M "May")
+//   RFC 7944 §9.1                      DRMP (table 5.3.3.1/2: Must not set)
+// Base protocol AVPs come from ietf/rfc6733/base.proto; User-Name is M in
+// table 5.3.3.1/2, as in the base protocol.
+//
+// Release compatibility (design §5.3a): S6c first appears in Release 11.
+// Every AVP that is required here is also required in TS 29.338 V11.0.0
+// (ETSI TS 129 338 V11.0.0). Release 11 messages lack DRMP and the
+// SMSF-related AVPs, all optional, and Release 11 Serving-Node,
+// Additional-Serving-Node and SM-Delivery-Outcome are subsets of the
+// current grammars.
+//
+// Rulings where the specification text needs reading:
+//   - SMSMI-Correlation-ID: §6.3.3.13 heads its ABNF
+//     "SMS-MI-Correlation-ID ::= <AVP header: 3308 10415>"; table 6.3.3.1/1
+//     gives the name SMSMI-Correlation-ID and code 3324, and 3308 is
+//     SM-RP-MTI. 3324 is used.
+//   - SGSN-Absent-User-Diagnostic-SM: the clause title (§5.3.3.11) says
+//     SGSN-Absent-Subscriber-Diagnostic-SM and table 5.3.3.1/1
+//     "SGSN-Absent-User-Diagnostic SM"; the ABNF and the clause text say
+//     SGSN-Absent-User-Diagnostic-SM, which is used.
+//   - MSISDN: table 5.3.3.1/2 cites "3GPP TS 23.329", read as TS 29.329.
+//   - The SMSF-3GPP-* and SMSF-Non-3GPP-* entries keep the dictionary rule
+//     (SMSF_3GPP_NUMBER, ...); their fields are spelt smsf3gpp_* and
+//     smsf_non3gpp_* with (diam.avp), so that the Go names are
+//     Smsf3GppNumber rather than Smsf_3GppNumber.
+//   - SM-Delivery-Failure-Cause is in table 5.3.3.1/2 but in no S6c
+//     command; its grouped type is here so that an application can decode
+//     it from Unknown, as Sh does with Supported-Applications.
+//   - Supported-Features M-bit: §4.9 applies TS 29.229 §7.2, whose §7.2.1
+//     sets it in requests and clears it in answers. The dictionary has it
+//     clear and every request sets (diam.m) = true, as in Cx, Sh and S6t.
+//   - The *-SM-Delivery-Outcome groups have no *[ AVP ] in their ABNF and
+//     are not extensible; an unknown AVP inside them is kept and reported
+//     like any other.
+//   - MWD-Status, SRR-Flags, RDR-Flags and SMS-GMSC-Alert-Event are
+//     Unsigned32 bit masks, and the *-Absent-User-Diagnostic-SM AVPs carry
+//     TS 23.040 values; they are uint32 fields.
+//   - The allowed combinations of Serving-Node and Additional-Serving-Node
+//     (§5.3.3.6-5.3.3.7) and the one-identity rule of User-Identifier are
+//     procedure rules without a Result-Code; Validate checks the grammar
+//     only.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.s6c;
+
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/s6c";
+
+// Avp is the S6c dictionary of 3GPP AVPs (vendor 10415): table 5.3.3.1/1,
+// then the re-used 3GPP AVPs of table 5.3.3.1/2 and the AVPs inside their
+// grammars. The M-bit is set where the flag rules say "Must"; "May" is left
+// clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // TS 29.229 §6.3.29; §4.9 sets the M-bit per message (see the requests)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.229 §6.3.30; §5.3.3.12: value 1
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.229 §6.3.31; bits for S6c in table 5.3.3.13/1
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.329 §6.3.2 (M, V)
+  MSISDN = 701 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.102 (M, V)
+  SGSN_NUMBER = 1489 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.159; table 5.3.3.1/2: Must
+  MME_NUMBER_FOR_MT_SMS = 1645 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.173 §6.4.2 (M, V)
+  LMSI = 2400 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.173 §6.4.3 (M, V); S6c grammar §5.3.3.6
+  SERVING_NODE = 2401 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.173 §6.4.4 (M, V)
+  MME_NAME = 2402 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.5 (M, V)
+  MSC_NUMBER = 2403 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.173 §6.4.8 (M, V); S6c grammar §5.3.3.7
+  ADDITIONAL_SERVING_NODE = 2406 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.173 §6.4.12; table 5.3.3.1/2: Must
+  MME_REALM = 2408 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.13 (V, M must not)
+  SGSN_NAME = 2409 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.14 (V, M must not)
+  SGSN_REALM = 2410 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.336 §6.4.14 (M, V)
+  IP_SM_GW_NUMBER = 3100 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.336 §6.4.15 (M, V)
+  IP_SM_GW_NAME = 3101 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.336 §6.4.2 (M, V)
+  USER_IDENTIFIER = 3102 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.336 §6.4.11 (M, V)
+  EXTERNAL_IDENTIFIER = 3111 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  // TS 29.336 §6.4.18 (M, V)
+  IP_SM_GW_REALM = 3112 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // §6.3.3.2, table 6.3.3.1/1 (M, V)
+  SC_ADDRESS = 3300 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // §6.3.3.5, table 6.3.3.1/1 (M, V)
+  SM_DELIVERY_FAILURE_CAUSE = 3303 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §6.3.3.6, table 6.3.3.1/1 (M, V)
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE = 3304 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // §6.3.3.7, table 6.3.3.1/1 (M, V)
+  SM_DIAGNOSTIC_INFO = 3305 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SM_RP_MTI = 3308 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  SM_RP_SMEA = 3309 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // §5.3.3.4, table 5.3.3.4/1: bit 0 GPRS-Indicator, bit 1 SM-RP-PRI,
+  // bit 2 Single-Attempt-Delivery
+  SRR_FLAGS = 3310 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SM_DELIVERY_NOT_INTENDED = 3311 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // §5.3.3.8, table 5.3.3.8/1 (bits 0-4)
+  MWD_STATUS = 3312 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MME_ABSENT_USER_DIAGNOSTIC_SM = 3313 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  MSC_ABSENT_USER_DIAGNOSTIC_SM = 3314 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // table 5.3.3.1/1 writes "SGSN-Absent-User-Diagnostic SM", §5.3.3.11's
+  // title SGSN-Absent-Subscriber-Diagnostic-SM
+  SGSN_ABSENT_USER_DIAGNOSTIC_SM = 3315 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  SM_DELIVERY_OUTCOME = 3316 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MME_SM_DELIVERY_OUTCOME = 3317 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MSC_SM_DELIVERY_OUTCOME = 3318 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SGSN_SM_DELIVERY_OUTCOME = 3319 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  IP_SM_GW_SM_DELIVERY_OUTCOME = 3320 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SM_DELIVERY_CAUSE = 3321 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  ABSENT_USER_DIAGNOSTIC_SM = 3322 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §5.3.3.21, table 5.3.3.21/1: bit 0 Single-Attempt-Delivery
+  RDR_FLAGS = 3323 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // §6.3.3.13, table 6.3.3.1/1 (V); the ABNF heads it with code 3308
+  SMSMI_CORRELATION_ID = 3324 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // §6.3.3.14, table 6.3.3.1/1 (V)
+  HSS_ID = 3325 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // §6.3.3.15, table 6.3.3.1/1 (V)
+  ORIGINATING_SIP_URI = 3326 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  // §6.3.3.16, table 6.3.3.1/1 (V)
+  DESTINATION_SIP_URI = 3327 [(diam.def) = {vendor: 10415, type: UTF8_STRING}];
+  MAXIMUM_UE_AVAILABILITY_TIME = 3329 [(diam.def) = {vendor: 10415, type: TIME}];
+  // §5.3.3.23, table 5.3.3.23/1: bit 0 UE-Available-For-MT-SMS, bit 1
+  // UE-Under-New-Serving-Node
+  SMS_GMSC_ALERT_EVENT = 3333 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SMSF_3GPP_ABSENT_USER_DIAGNOSTIC_SM = 3334 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SMSF_NON_3GPP_ABSENT_USER_DIAGNOSTIC_SM = 3335 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  SMSF_3GPP_SM_DELIVERY_OUTCOME = 3336 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SMSF_NON_3GPP_SM_DELIVERY_OUTCOME = 3337 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SMSF_3GPP_NUMBER = 3338 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SMSF_NON_3GPP_NUMBER = 3339 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  SMSF_3GPP_NAME = 3340 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SMSF_NON_3GPP_NAME = 3341 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SMSF_3GPP_REALM = 3342 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SMSF_NON_3GPP_REALM = 3343 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SMSF_3GPP_ADDRESS = 3344 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SMSF_NON_3GPP_ADDRESS = 3345 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  SMSF_3GPP_SBI_SUPPORT_INDICATOR = 3346 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  SMSF_NON_3GPP_SBI_SUPPORT_INDICATOR = 3347 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+  IP_SM_GW_SBI_SUPPORT_INDICATOR = 3348 [(diam.def) = {vendor: 10415, type: ENUMERATED}];
+}
+
+// IetfAvp holds the re-used IETF AVP (no Vendor-Id), a separate dictionary
+// as in the other 3GPP files.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 7944 §9.1; table 5.3.3.1/2: Must not set
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+}
+
+// SM-RP-MTI (§5.3.3.2).
+enum SmRpMti {
+  SM_RP_MTI_SM_DELIVER = 0;
+  SM_RP_MTI_SM_STATUS_REPORT = 1;
+}
+
+// SM-Delivery-Not-Intended (§5.3.3.5).
+enum SmDeliveryNotIntended {
+  SM_DELIVERY_NOT_INTENDED_ONLY_IMSI_REQUESTED = 0;
+  SM_DELIVERY_NOT_INTENDED_ONLY_MCC_MNC_REQUESTED = 1;
+}
+
+// SM-Delivery-Cause (§5.3.3.19). The clause writes
+// "UE_ MEMORY_CAPACITY_EXCEEDED"; the space is a typo.
+enum SmDeliveryCause {
+  SM_DELIVERY_CAUSE_UE_MEMORY_CAPACITY_EXCEEDED = 0;
+  SM_DELIVERY_CAUSE_ABSENT_USER = 1;
+  SM_DELIVERY_CAUSE_SUCCESSFUL_TRANSFER = 2;
+}
+
+// SM-Enumerated-Delivery-Failure-Cause (§6.3.3.6). Names with "-" in the
+// specification (EQUIPMENT_NOT_SM-EQUIPPED, SC-CONGESTION, ...) use "_".
+enum SmEnumeratedDeliveryFailureCause {
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_MEMORY_CAPACITY_EXCEEDED = 0;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_EQUIPMENT_PROTOCOL_ERROR = 1;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_EQUIPMENT_NOT_SM_EQUIPPED = 2;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_UNKNOWN_SERVICE_CENTRE = 3;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_SC_CONGESTION = 4;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_INVALID_SME_ADDRESS = 5;
+  SM_ENUMERATED_DELIVERY_FAILURE_CAUSE_USER_NOT_SC_USER = 6;
+}
+
+// SMSF-3GPP-SBI-Support-Indicator (§5.3.3.37).
+enum Smsf3gppSbiSupportIndicator {
+  SMSF_3GPP_SBI_SUPPORT_INDICATOR_NOT_SUPPORT_SBI = 0;
+  SMSF_3GPP_SBI_SUPPORT_INDICATOR_SUPPORT_SBI = 1;
+}
+
+// SMSF-Non-3GPP-SBI-Support-Indicator (§5.3.3.38).
+enum SmsfNon3gppSbiSupportIndicator {
+  SMSF_NON_3GPP_SBI_SUPPORT_INDICATOR_NOT_SUPPORT_SBI = 0;
+  SMSF_NON_3GPP_SBI_SUPPORT_INDICATOR_SUPPORT_SBI = 1;
+}
+
+// IP-SM-GW-SBI-Support-Indicator (§5.3.3.39).
+enum IpSmGwSbiSupportIndicator {
+  IP_SM_GW_SBI_SUPPORT_INDICATOR_NOT_SUPPORT_SBI = 0;
+  IP_SM_GW_SBI_SUPPORT_INDICATOR_SUPPORT_SBI = 1;
+}
+
+// DRMP (RFC 7944 §9.1).
+enum Drmp {
+  DRMP_PRIORITY_0 = 0;
+  DRMP_PRIORITY_1 = 1;
+  DRMP_PRIORITY_2 = 2;
+  DRMP_PRIORITY_3 = 3;
+  DRMP_PRIORITY_4 = 4;
+  DRMP_PRIORITY_5 = 5;
+  DRMP_PRIORITY_6 = 6;
+  DRMP_PRIORITY_7 = 7;
+  DRMP_PRIORITY_8 = 8;
+  DRMP_PRIORITY_9 = 9;
+  DRMP_PRIORITY_10 = 10;
+  DRMP_PRIORITY_11 = 11;
+  DRMP_PRIORITY_12 = 12;
+  DRMP_PRIORITY_13 = 13;
+  DRMP_PRIORITY_14 = 14;
+  DRMP_PRIORITY_15 = 15;
+}
+
+// Supported-Features (TS 29.229 §6.3.29)
+//
+// Supported-Features ::= < AVP header: 628 10415 >
+//   { Vendor-Id }
+//   { Feature-List-ID }
+//   { Feature-List }
+//   *[AVP]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// User-Identifier (TS 29.336 §6.4.2)
+//
+// User-Identifier ::= <AVP header: 3102 10415>
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ External-Identifier ]
+//   [ LMSI ]
+//   *[AVP]
+message UserIdentifier {
+  option (diam.extensible) = true;
+  optional string user_name = 1;
+  optional bytes msisdn = 2;
+  optional string external_identifier = 3;
+  optional bytes lmsi = 4;
+}
+
+// Serving-Node (§5.3.3.6, originally TS 29.173 §6.4.3)
+//
+// Serving-Node ::= <AVP header: 2401 10415>
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ SGSN-Number ]
+//   [ MME-Name ]
+//   [ MME-Realm ]
+//   [ MME-Number-for-MT-SMS ]
+//   [ MSC-Number ]
+//   [ IP-SM-GW-Number ]
+//   [ IP-SM-GW-Name ]
+//   [ IP-SM-GW-Realm ]
+//   [ IP-SM-GW-SBI-Support-Indicator ]
+//   *[AVP]
+message ServingNode {
+  option (diam.extensible) = true;
+  optional string sgsn_name = 1;
+  optional string sgsn_realm = 2;
+  optional bytes sgsn_number = 3;
+  optional string mme_name = 4;
+  optional string mme_realm = 5;
+  optional bytes mme_number_for_mt_sms = 6;
+  optional bytes msc_number = 7;
+  optional bytes ip_sm_gw_number = 8;
+  optional string ip_sm_gw_name = 9;
+  optional string ip_sm_gw_realm = 10;
+  optional IpSmGwSbiSupportIndicator ip_sm_gw_sbi_support_indicator = 11;
+}
+
+// Additional-Serving-Node (§5.3.3.7, originally TS 29.173 §6.4.8)
+//
+// Additional-Serving-Node ::= <AVP header: 2406 10415>
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ SGSN-Number ]
+//   [ MME-Name ]
+//   [ MME-Realm ]
+//   [ MME-Number-for-MT-SMS ]
+//   [ MSC-Number ]
+//   *[AVP]
+message AdditionalServingNode {
+  option (diam.extensible) = true;
+  optional string sgsn_name = 1;
+  optional string sgsn_realm = 2;
+  optional bytes sgsn_number = 3;
+  optional string mme_name = 4;
+  optional string mme_realm = 5;
+  optional bytes mme_number_for_mt_sms = 6;
+  optional bytes msc_number = 7;
+}
+
+// SMSMI-Correlation-ID (§6.3.3.13)
+//
+// SMS-MI-Correlation-ID ::= <AVP header: 3308 10415>
+//   [ HSS-ID ]
+//   [ Originating-SIP-URI ]
+//   [ Destination-SIP-URI ]
+//   *[ AVP ]
+//
+// The code is 3324 (table 6.3.3.1/1; see the file header).
+message SmsmiCorrelationId {
+  option (diam.extensible) = true;
+  optional string hss_id = 1;
+  optional string originating_sip_uri = 2;
+  optional string destination_sip_uri = 3;
+}
+
+// SM-Delivery-Outcome (§5.3.3.14)
+//
+// SM-Delivery-Outcome::= <AVP header: 3316 10415>
+//   [ MME-SM-Delivery-Outcome ]
+//   [ MSC-SM-Delivery-Outcome ]
+//   [ SGSN-SM-Delivery-Outcome ]
+//   [ IP-SM-GW-SM-Delivery-Outcome ]
+//   [ SMSF-3GPP-SM-Delivery-Outcome ]
+//   [ SMSF-Non-3GPP-SM-Delivery-Outcome ]
+//   *[AVP]
+message SmDeliveryOutcome {
+  option (diam.extensible) = true;
+  optional DeliveryOutcome mme_sm_delivery_outcome = 1;
+  optional DeliveryOutcome msc_sm_delivery_outcome = 2;
+  optional DeliveryOutcome sgsn_sm_delivery_outcome = 3;
+  optional DeliveryOutcome ip_sm_gw_sm_delivery_outcome = 4;
+  optional DeliveryOutcome smsf3gpp_sm_delivery_outcome = 5 [(diam.avp) = "SMSF_3GPP_SM_DELIVERY_OUTCOME"];
+  optional DeliveryOutcome smsf_non3gpp_sm_delivery_outcome = 6 [(diam.avp) = "SMSF_NON_3GPP_SM_DELIVERY_OUTCOME"];
+}
+
+// DeliveryOutcome is the one grammar of the six per-node outcome AVPs:
+// MME- (§5.3.3.15, code 3317), MSC- (§5.3.3.16, 3318), SGSN- (§5.3.3.17,
+// 3319), IP-SM-GW- (§5.3.3.18, 3320), SMSF-3GPP- (§5.3.3.27, 3336) and
+// SMSF-Non-3GPP-SM-Delivery-Outcome (§5.3.3.28, 3337). The code comes from
+// the referring field.
+//
+// MME-SM-Delivery-Outcome::= <AVP header: 3317 10415>
+//   [ SM-Delivery-Cause ]
+//   [ Absent-User-Diagnostic-SM ]
+message DeliveryOutcome {
+  optional SmDeliveryCause sm_delivery_cause = 1;
+  optional uint32 absent_user_diagnostic_sm = 2;
+}
+
+// SMSF-3GPP-Address (§5.3.3.35)
+//
+// SMSF-3GPP-Address ::= <AVP header: 3344 10415>
+//   [ SMSF-3GPP-Number ]
+//   [ SMSF-3GPP-Name ]
+//   [ SMSF-3GPP-Realm ]
+//   [ SMSF-3GPP-SBI-Support-Indicator ]
+//   *[AVP]
+message Smsf3gppAddress {
+  option (diam.extensible) = true;
+  optional bytes smsf3gpp_number = 1 [(diam.avp) = "SMSF_3GPP_NUMBER"];
+  optional string smsf3gpp_name = 2 [(diam.avp) = "SMSF_3GPP_NAME"];
+  optional string smsf3gpp_realm = 3 [(diam.avp) = "SMSF_3GPP_REALM"];
+  optional Smsf3gppSbiSupportIndicator smsf3gpp_sbi_support_indicator = 4 [(diam.avp) = "SMSF_3GPP_SBI_SUPPORT_INDICATOR"];
+}
+
+// SMSF-Non-3GPP-Address (§5.3.3.36)
+//
+// SMSF-Non-3GPP-Address ::= <AVP header: 3345 10415>
+//   [ SMSF-Non-3GPP-Number ]
+//   [ SMSF-Non-3GPP-Name ]
+//   [ SMSF-Non-3GPP-Realm ]
+//   [ SMSF-Non-3GPP-SBI-Support-Indicator ]
+//   *[AVP]
+message SmsfNon3gppAddress {
+  option (diam.extensible) = true;
+  optional bytes smsf_non3gpp_number = 1 [(diam.avp) = "SMSF_NON_3GPP_NUMBER"];
+  optional string smsf_non3gpp_name = 2 [(diam.avp) = "SMSF_NON_3GPP_NAME"];
+  optional string smsf_non3gpp_realm = 3 [(diam.avp) = "SMSF_NON_3GPP_REALM"];
+  optional SmsfNon3gppSbiSupportIndicator smsf_non3gpp_sbi_support_indicator = 4 [(diam.avp) = "SMSF_NON_3GPP_SBI_SUPPORT_INDICATOR"];
+}
+
+// SM-Delivery-Failure-Cause (§6.3.3.5; in table 5.3.3.1/2, in no S6c command)
+//
+// SM-Delivery-Failure-Cause ::= <AVP header: 3303 10415>
+//   { SM-Enumerated-Delivery-Failure-Cause }
+//   [ SM-Diagnostic-Info ]
+//   *[ AVP ]
+message SmDeliveryFailureCause {
+  option (diam.extensible) = true;
+  SmEnumeratedDeliveryFailureCause sm_enumerated_delivery_failure_cause = 1;
+  optional bytes sm_diagnostic_info = 2;
+}
+
+// Send-Routing-Info-for-SM-Request (5.3.2.3)
+//
+// < Send-Routing-Info-for-SM-Request > ::= < Diameter Header: 8388647, REQ, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   [ MSISDN ]
+//   [ User-Name ]
+//   [ SMSMI-Correlation-ID ]
+//   *[ Supported-Features ]
+//   [ SC-Address ]
+//   [ SM-RP-MTI ]
+//   [ SM-RP-SMEA ]
+//   [ SRR-Flags ]
+//   [ SM-Delivery-Not-Intended ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message SendRoutingInfoForSmRequest {
+  option (diam.command) = {
+    code: 8388647
+    app_id: 16777312
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  optional bytes msisdn = 9;
+  optional string user_name = 10;
+  optional SmsmiCorrelationId smsmi_correlation_id = 11;
+  // TS 29.229 §7.2.1 (by §4.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 12 [(diam.m) = true];
+  optional bytes sc_address = 13;
+  optional SmRpMti sm_rp_mti = 14;
+  optional bytes sm_rp_smea = 15;
+  optional uint32 srr_flags = 16;
+  optional SmDeliveryNotIntended sm_delivery_not_intended = 17;
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+}
+
+// Send-Routing-Info-for-SM-Answer (5.3.2.4)
+//
+// < Send-Routing-info-for-SM-Answer > ::= < Diameter Header: 8388647, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ User-Name ]
+//   *[ Supported-Features ]
+//   [ Serving-Node ]
+//   [ Additional-Serving-Node ]
+//   [ SMSF-3GPP-Address ]
+//   [ SMSF-Non-3GPP-Address ]
+//   [ LMSI ]
+//   [ User-Identifier ]
+//   [ MWD-Status ]
+//   [ MME-Absent-User-Diagnostic-SM ]
+//   [ MSC-Absent-User-Diagnostic-SM ]
+//   [ SGSN-Absent-User-Diagnostic-SM ]
+//   [ SMSF-3GPP-Absent-User-Diagnostic-SM ]
+//   [ SMSF-Non-3GPP-Absent-User-Diagnostic-SM ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message SendRoutingInfoForSmAnswer {
+  option (diam.command) = {
+    code: 8388647
+    app_id: 16777312
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional string user_name = 9;
+  repeated SupportedFeatures supported_features = 10;
+  optional ServingNode serving_node = 11;
+  optional AdditionalServingNode additional_serving_node = 12;
+  optional Smsf3gppAddress smsf3gpp_address = 13 [(diam.avp) = "SMSF_3GPP_ADDRESS"];
+  optional SmsfNon3gppAddress smsf_non3gpp_address = 14 [(diam.avp) = "SMSF_NON_3GPP_ADDRESS"];
+  optional bytes lmsi = 15;
+  optional UserIdentifier user_identifier = 16;
+  optional uint32 mwd_status = 17;
+  optional uint32 mme_absent_user_diagnostic_sm = 18;
+  optional uint32 msc_absent_user_diagnostic_sm = 19;
+  optional uint32 sgsn_absent_user_diagnostic_sm = 20;
+  optional uint32 smsf3gpp_absent_user_diagnostic_sm = 21 [(diam.avp) = "SMSF_3GPP_ABSENT_USER_DIAGNOSTIC_SM"];
+  optional uint32 smsf_non3gpp_absent_user_diagnostic_sm = 22 [(diam.avp) = "SMSF_NON_3GPP_ABSENT_USER_DIAGNOSTIC_SM"];
+  optional godiam.base.FailedAvp failed_avp = 23;
+  repeated godiam.base.ProxyInfo proxy_info = 24;
+  repeated string route_record = 25;
+}
+
+// Alert-Service-Centre-Request (5.3.2.5)
+//
+// < Alert-Service-Centre-Request > ::= < Diameter Header: 8388648, REQ, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { SC-Address }
+//   { User-Identifier }
+//   [ SMSMI-Correlation-ID ]
+//   [ Maximum-UE-Availability-Time ]
+//   [ SMS-GMSC-Alert-Event ]
+//   [ Serving-Node ]
+//   *[ Supported-Features ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message AlertServiceCentreRequest {
+  option (diam.command) = {
+    code: 8388648
+    app_id: 16777312
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  bytes sc_address = 9;
+  UserIdentifier user_identifier = 10;
+  optional SmsmiCorrelationId smsmi_correlation_id = 11;
+  optional uint32 maximum_ue_availability_time = 12;
+  optional uint32 sms_gmsc_alert_event = 13;
+  optional ServingNode serving_node = 14;
+  // TS 29.229 §7.2.1 (by §4.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 15 [(diam.m) = true];
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// Alert-Service-Centre-Answer (5.3.2.6)
+//
+// < Alert-Service-Centre-Answer > ::= < Diameter Header: 8388648, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message AlertServiceCentreAnswer {
+  option (diam.command) = {
+    code: 8388648
+    app_id: 16777312
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  repeated SupportedFeatures supported_features = 9;
+  optional godiam.base.FailedAvp failed_avp = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
+
+// Report-SM-Delivery-Status-Request (5.3.2.7)
+//
+// < Report-SM-Delivery-Status-Request > ::= < Diameter Header: 8388649, REQ, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   *[ Supported-Features ]
+//   { User-Identifier }
+//   [ SMSMI-Correlation-ID ]
+//   { SC-Address }
+//   { SM-Delivery-Outcome }
+//   [ RDR-Flags ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ReportSmDeliveryStatusRequest {
+  option (diam.command) = {
+    code: 8388649
+    app_id: 16777312
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  // TS 29.229 §7.2.1 (by §4.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 9 [(diam.m) = true];
+  UserIdentifier user_identifier = 10;
+  optional SmsmiCorrelationId smsmi_correlation_id = 11;
+  bytes sc_address = 12;
+  SmDeliveryOutcome sm_delivery_outcome = 13;
+  optional uint32 rdr_flags = 14;
+  repeated godiam.base.ProxyInfo proxy_info = 15;
+  repeated string route_record = 16;
+}
+
+// Report-SM-Delivery-Status-Answer (5.3.2.8)
+//
+// < Report-SM-Delivery-Status-Answer > ::= < Diameter Header: 8388649, PXY, 16777312 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   [ User-Identifier ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message ReportSmDeliveryStatusAnswer {
+  option (diam.command) = {
+    code: 8388649
+    app_id: 16777312
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  repeated SupportedFeatures supported_features = 9;
+  optional UserIdentifier user_identifier = 10;
+  optional godiam.base.FailedAvp failed_avp = 11;
+  repeated godiam.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
