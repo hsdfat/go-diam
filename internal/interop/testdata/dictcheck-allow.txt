@@ -39,3 +39,8 @@
 #
 # Zh (proto/3gpp/ts29109/zh.proto, TS 29.109 V18.1.0): no disagreement; all
 # three of its own entries are absent from go-diameter.
+# SWx (proto/3gpp/ts29273/swx.proto, TS 29.273 V18.6.0). Its RAT-Type
+# (M clear, TS 29.212 through table 8.2.3.0/2) agrees with the go-diameter
+# definition compared here; go-diameter's SWx application has M,V, which the
+# interop test overrides (swxM in swx_test.go).
+1503 10415 m TS 29.273 table 8.2.3.0/1: AN-Trusted is V, M must not on SWx; go-diameter has M,V (the STa rule of table 5.2.3.1/1)

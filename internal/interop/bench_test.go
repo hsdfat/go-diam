@@ -85,3 +85,7 @@ func BenchmarkULA(b *testing.B) { benchPair(b, "ULA") }
 
 // S13 ECR: Terminal-Information with IMEI, 3GPP2-MEID and Software-Version.
 func BenchmarkECR(b *testing.B) { benchPair(b, "ECR") }
+
+// SWx MAA: an EAP-AKA' vector (SIP-Auth-Data-Item with CK' and IK'),
+// OC-OLR, Load and Supported-Features.
+func BenchmarkMAA(b *testing.B) { benchPair(b, "MAA") }

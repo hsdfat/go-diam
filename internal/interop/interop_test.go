@@ -225,12 +225,14 @@ func pairs() []pair {
 }
 
 // allPairs is every interop sample of an application go-diameter has a
-// dictionary for: the base protocol, S6a/S6d and S13/S13'.
-func allPairs() []pair { return append(append(pairs(), s6aPairs()...), s13Pairs()...) }
+// dictionary for: the base protocol, S6a/S6d, S13/S13' and SWx.
+func allPairs() []pair {
+	return append(append(append(pairs(), s6aPairs()...), s13Pairs()...), swxPairs()...)
+}
 
 // fiorixGaps holds, per application, the AVPs go-diameter is allowed to
 // decode as Unknown in that application's messages.
-var fiorixGaps = map[uint32]map[[2]uint32]string{s6aApp: fiorixS6aGaps}
+var fiorixGaps = map[uint32]map[[2]uint32]string{s6aApp: fiorixS6aGaps, swxApp: fiorixSwxUnknown}
 
 // noUnknown reports the first AVP in avps, or nested in them, that
 // go-diameter decoded as datatype.Unknown, other than the known gaps of its
