@@ -1,0 +1,15 @@
+Frames received from a Diameter peer by internal/interop/peer_open5gs_test.go.
+
+Peer:     hss.test (Product-Name "freediameter", Vendor-Id 0, Firmware-Revision 10500)
+Software: Open5GS v2.8.0 open5gs-hssd, upstream commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, built from source
+Image:    ci/open5gs/Dockerfile (ubuntu:noble-20261024.1), MongoDB mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
+Date:     2026-11-14
+Command:  go test -tags peer -run 'TestPeerS6a$' -update ./internal/interop/
+Content:  cea.bin (CEA), aia.bin (AIA, one E-UTRAN vector), ula.bin (ULA with
+          Subscription-Data), aia-user-unknown.bin (AIA, Experimental-Result
+          5001), clr.bin (CLR the HSS sent to the first MME after a second
+          MME's ULR), pua.bin (PUA). In testdata/deviations/s6a,
+          noa.bin is the 3001 error answer to a NOR, with the P bit cleared.
+
+Generated in CI against a synthetic subscriber (IMSI 001010000000001, random test K and
+OPc in ci/open5gs/subscriber.js); no operator traffic.

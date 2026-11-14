@@ -1,0 +1,10 @@
+Frames received from a Diameter peer by internal/interop/peer_test.go.
+
+Peer:     peer.test (Product-Name "freeDiameter", Firmware-Revision 10201)
+Image:    ci/freediameter/Dockerfile (Debian bookworm package "freediameter")
+Date:     2026-11-14
+Command:  go test -tags peer -run 'TestPeer$' -update ./internal/interop/
+
+Generated in CI against freeDiameter; no operator traffic. In
+testdata/deviations/base, sta.bin, asa.bin and raa.bin are freeDiameter's
+3007 error answers to an STR, ASR and RAR, with the P bit cleared.
