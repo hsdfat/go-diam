@@ -259,3 +259,8 @@
 721 10415 CALL_REFERENCE_NUMBER
 722 10415 AS_NUMBER
 3111 10415 EXTERNAL_IDENTIFIER
+
+# S13/S13', proto/3gpp/ts29272/s13/s13.proto: no dictionary of its own, and
+# nothing to list. Its six AVPs are S6a dictionary entries, and go-diameter
+# has all of them (Terminal-Information, IMEI, Software-Version, 3GPP2-MEID
+# and Equipment-Status in its S13 application, DRMP in its base protocol).

@@ -82,3 +82,6 @@ func BenchmarkULR(b *testing.B) { benchPair(b, "ULR") }
 // ULA with a Subscription-Data that carries APN, GPRS, LCS, trace and CSG
 // data (about 2.3 kB on the wire).
 func BenchmarkULA(b *testing.B) { benchPair(b, "ULA") }
+
+// S13 ECR: Terminal-Information with IMEI, 3GPP2-MEID and Software-Version.
+func BenchmarkECR(b *testing.B) { benchPair(b, "ECR") }

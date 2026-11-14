@@ -27,3 +27,8 @@
 #
 # Sh/Dh (proto/3gpp/ts29329/sh.proto, TS 29.329 V18.0.0): no disagreement of
 # its own. Its Load-Value is covered by the "652 0 type" line above.
+#
+# S13/S13' (proto/3gpp/ts29272/s13/s13.proto, TS 29.272 V18.7.0): no
+# dictionary of its own. Its AVPs (Terminal-Information, IMEI,
+# Software-Version, 3GPP2-MEID, Equipment-Status, DRMP) are the S6a entries,
+# compared above with no disagreement.
