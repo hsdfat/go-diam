@@ -1,13 +1,16 @@
 package interop
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	_ "github.com/hsdfat/go-diam/base" // registers the base commands
+	_ "github.com/hsdfat/go-diam/cx"   // registers the Cx/Dx commands
 	"github.com/hsdfat/go-diam/diam"
 	"github.com/hsdfat/go-diam/internal/diamtest"
+	_ "github.com/hsdfat/go-diam/s6a" // registers the S6a/S6d commands
 )
 
 // capturesDir holds frames received from real peers: one raw Diameter
@@ -34,23 +37,8 @@ func TestCaptures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m, err := diam.Decode(wire)
-			if err != nil {
+			if _, err := replay(wire); err != nil {
 				t.Fatal(err)
-			}
-			if err := m.Validate(); err != nil {
-				t.Fatalf("Validate: %v", err)
-			}
-			out, err := m.AppendMarshal(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := diamtest.SameAVPs(wire, out); err != nil {
-				t.Fatalf("re-encoded message differs from the capture: %v", err)
-			}
-			orig, _, _ := diam.ParseHeader(wire)
-			if got, _, _ := diam.ParseHeader(out); got != orig {
-				t.Fatalf("header = %+v, capture has %+v", got, orig)
 			}
 		})
 	}
@@ -59,4 +47,29 @@ func TestCaptures(t *testing.T) {
 			t.Errorf("%s: captures need a SOURCE file naming the peer software, version, date and command", dir)
 		}
 	}
+}
+
+// replay is the check TestCaptures applies to one frame: it must decode to a
+// registered command, pass Validate, and re-encode to the same header and
+// the same multiset of AVPs.
+func replay(wire []byte) (diam.Message, error) {
+	m, err := diam.Decode(wire)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.Validate(); err != nil {
+		return m, fmt.Errorf("Validate: %w", err)
+	}
+	out, err := m.AppendMarshal(nil)
+	if err != nil {
+		return m, err
+	}
+	if err := diamtest.SameAVPs(wire, out); err != nil {
+		return m, fmt.Errorf("re-encoded message differs from the capture: %w", err)
+	}
+	orig, _, _ := diam.ParseHeader(wire)
+	if got, _, _ := diam.ParseHeader(out); got != orig {
+		return m, fmt.Errorf("header = %+v, capture has %+v", got, orig)
+	}
+	return m, nil
 }

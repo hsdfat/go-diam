@@ -3,6 +3,7 @@
 package interop
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"net"
@@ -16,7 +17,7 @@ import (
 	"github.com/hsdfat/go-diam/diam"
 )
 
-var update = flag.Bool("update", false, "write the frames received from the peer to testdata/captures/base")
+var update = flag.Bool("update", false, "write the frames received from the peer to testdata/captures/<dir>")
 
 // relayAppID is the Relay application id (RFC 6733 §2.4): advertising it
 // gives a common application with any peer.
@@ -24,8 +25,56 @@ const relayAppID = 0xffffffff
 
 // peerConn is a TCP connection to the peer under test.
 type peerConn struct {
-	t    *testing.T
-	conn net.Conn
+	t           *testing.T
+	conn        net.Conn
+	host, realm string // our identity
+	id          uint32 // last Hop-by-Hop and End-to-End identifier used
+	dir         string // capture directory written with -update
+}
+
+// dialPeer connects to the peer at the address in the environment variable
+// env, or skips the test when it is not set.
+func dialPeer(t *testing.T, env, host, realm, dir string) *peerConn {
+	t.Helper()
+	addr := os.Getenv(env)
+	if addr == "" {
+		t.Skipf("%s is not set", env)
+	}
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	p := &peerConn{t: t, conn: conn, host: host, realm: realm, dir: filepath.Join(capturesDir, dir)}
+	if *update {
+		if err := os.MkdirAll(p.dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return p
+}
+
+// localAddr is our end of the connection, for Host-IP-Address.
+func (p *peerConn) localAddr() netip.Addr {
+	local, err := netip.ParseAddrPort(p.conn.LocalAddr().String())
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	return local.Addr().Unmap()
+}
+
+// next returns a header with fresh identifiers.
+func (p *peerConn) next() diam.Header {
+	p.id++
+	return diam.Header{HopByHop: p.id, EndToEnd: p.id}
+}
+
+// sessionID returns a Session-Id of ours (RFC 6733 §8.8).
+func (p *peerConn) sessionID() string {
+	return fmt.Sprintf("%s;%d;%d", p.host, time.Now().Unix(), p.id+1)
 }
 
 func (p *peerConn) send(m diam.Message) {
@@ -39,8 +88,8 @@ func (p *peerConn) send(m diam.Message) {
 	}
 }
 
-// answer reads frames until the answer to the given command arrives. The
-// peer's own requests (it may send a DWR at any time) are skipped.
+// answer reads frames until the answer to the given command arrives. A DWR
+// from the peer is answered; other requests from it are logged and skipped.
 func (p *peerConn) answer(code uint32) []byte {
 	p.t.Helper()
 	for {
@@ -55,108 +104,128 @@ func (p *peerConn) answer(code uint32) []byte {
 		if h.CommandCode == code && h.Flags&diam.FlagRequest == 0 {
 			return frame
 		}
-		p.t.Logf("skipping command %d flags %#x from the peer", h.CommandCode, h.Flags)
+		if h.CommandCode == 280 && h.Flags&diam.FlagRequest != 0 {
+			var dwr base.DeviceWatchdogRequest
+			if err := dwr.Unmarshal(frame); err != nil {
+				p.t.Fatal(err)
+			}
+			dwa := base.NewDeviceWatchdogAnswerFor(&dwr)
+			dwa.ResultCode, dwa.OriginHost, dwa.OriginRealm = 2001, p.host, p.realm
+			p.send(dwa)
+			continue
+		}
+		p.t.Logf("skipping command %d flags %#x from the peer: %x", h.CommandCode, h.Flags, frame)
 	}
 }
 
-// TestPeer exchanges CER/CEA, DWR/DWA and DPR/DPA with a real Diameter peer
-// at DIAM_PEER_ADDR and checks that go-diam accepts every answer.
+// exchange sends req, reads the answer with the same command code, saves it
+// as name.bin with -update, and replays it as TestCaptures will. It returns
+// the decoded answer, or nil after reporting an error.
+func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
+	p.t.Helper()
+	p.send(req)
+	frame := p.answer(req.DiamHeader().CommandCode)
+	p.t.Logf("%s: %d bytes: %x", name, len(frame), frame)
+	if *update {
+		if err := os.WriteFile(filepath.Join(p.dir, name+".bin"), frame, 0o644); err != nil {
+			p.t.Fatal(err)
+		}
+	}
+	m, err := replay(frame)
+	if err != nil {
+		p.t.Errorf("%s: %v", name, err)
+		return nil
+	}
+	out, _ := m.AppendMarshal(nil)
+	p.t.Logf("%s: decoded as %T; re-encoding byte-identical: %v", name, m, bytes.Equal(out, frame))
+	return m
+}
+
+// writeSource writes the SOURCE file of the capture directory.
+func (p *peerConn) writeSource(text string) {
+	p.t.Helper()
+	if !*update {
+		return
+	}
+	if err := os.WriteFile(filepath.Join(p.dir, "SOURCE"), []byte(text), 0o644); err != nil {
+		p.t.Fatal(err)
+	}
+}
+
+// capabilities exchanges CER/CEA and returns the CEA.
+func (p *peerConn) capabilities(name string, cer *base.CapabilitiesExchangeRequest) *base.CapabilitiesExchangeAnswer {
+	p.t.Helper()
+	cer.Header = p.next()
+	cea, ok := p.exchange(name, cer).(*base.CapabilitiesExchangeAnswer)
+	if !ok {
+		p.t.Fatal("no valid CEA")
+	}
+	if cea.ResultCode != 2001 {
+		p.t.Fatalf("CEA: Result-Code %d (%s)", cea.ResultCode, cea.ErrorMessage.V)
+	}
+	p.t.Logf("peer %s, product %q, vendor %d, firmware %d, auth apps %v, vendor apps %+v",
+		cea.OriginHost, cea.ProductName, cea.VendorId, cea.FirmwareRevision.V, cea.AuthApplicationId, cea.VendorSpecificApplicationId)
+	return cea
+}
+
+// TestPeer exchanges the base protocol commands with a real Diameter peer at
+// DIAM_PEER_ADDR and checks that go-diam accepts every answer.
 func TestPeer(t *testing.T) {
-	addr := os.Getenv("DIAM_PEER_ADDR")
-	if addr == "" {
-		t.Skip("DIAM_PEER_ADDR is not set")
-	}
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	p := &peerConn{t: t, conn: conn}
-
-	local, err := netip.ParseAddrPort(conn.LocalAddr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
 	const host, realm = "client.test", "test"
-	frames := map[string][]byte{}
+	p := dialPeer(t, "DIAM_PEER_ADDR", host, realm, "base")
 
-	p.send(&base.CapabilitiesExchangeRequest{
-		Header:            diam.Header{HopByHop: 1, EndToEnd: 1},
+	cea := p.capabilities("cea", &base.CapabilitiesExchangeRequest{
 		OriginHost:        host,
 		OriginRealm:       realm,
-		HostIpAddress:     []netip.Addr{local.Addr().Unmap()},
+		HostIpAddress:     []netip.Addr{p.localAddr()},
 		VendorId:          0,
 		ProductName:       "go-diam",
 		AuthApplicationId: []uint32{relayAppID},
 		InbandSecurityId:  []uint32{0}, // NO_INBAND_SECURITY
 	})
-	frames["cea"] = p.answer(257)
-	var cea base.CapabilitiesExchangeAnswer
-	if err := cea.Unmarshal(frames["cea"]); err != nil {
-		t.Fatal(err)
-	}
-	if err := cea.Validate(); err != nil {
-		t.Fatalf("CEA: Validate: %v", err)
-	}
-	if cea.ResultCode != 2001 {
-		t.Fatalf("CEA: Result-Code %d (%s)", cea.ResultCode, cea.ErrorMessage.V)
-	}
-	t.Logf("peer %s, product %q, firmware %d", cea.OriginHost, cea.ProductName, cea.FirmwareRevision.V)
 
-	p.send(&base.DeviceWatchdogRequest{Header: diam.Header{HopByHop: 2, EndToEnd: 2}, OriginHost: host, OriginRealm: realm})
-	frames["dwa"] = p.answer(280)
-	var dwa base.DeviceWatchdogAnswer
-	if err := dwa.Unmarshal(frames["dwa"]); err != nil {
-		t.Fatal(err)
-	}
-	if err := dwa.Validate(); err != nil {
-		t.Fatalf("DWA: Validate: %v", err)
-	}
-	if dwa.ResultCode != 2001 {
-		t.Fatalf("DWA: Result-Code %d", dwa.ResultCode)
+	if dwa, ok := p.exchange("dwa", &base.DeviceWatchdogRequest{Header: p.next(), OriginHost: host, OriginRealm: realm}).(*base.DeviceWatchdogAnswer); !ok || dwa.ResultCode != 2001 {
+		t.Fatalf("DWA: %+v", dwa)
 	}
 
-	p.send(&base.DisconnectPeerRequest{
-		Header: diam.Header{HopByHop: 3, EndToEnd: 3}, OriginHost: host, OriginRealm: realm,
+	// freeDiameter has no application behind RAR, STR and ASR, so it answers
+	// each with a protocol error (E bit). Those answers are still frames of
+	// the peer, and their grammar is the command's own (RFC 6733 §7.2).
+	if sta, ok := p.exchange("sta", &base.SessionTerminationRequest{
+		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+		DestinationRealm: realm, DestinationHost: diam.Some(string(cea.OriginHost)),
+		AuthApplicationId: 0, TerminationCause: base.TerminationCauseLogout,
+	}).(*base.SessionTerminationAnswer); ok {
+		t.Logf("STA: Result-Code %d, flags %#x", sta.ResultCode, sta.Header.Flags)
+	}
+	if asa, ok := p.exchange("asa", &base.AbortSessionRequest{
+		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+		DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
+	}).(*base.AbortSessionAnswer); ok {
+		t.Logf("ASA: Result-Code %d, flags %#x", asa.ResultCode, asa.Header.Flags)
+	}
+	if raa, ok := p.exchange("raa", &base.ReAuthRequest{
+		Header: p.next(), SessionId: p.sessionID(), OriginHost: host, OriginRealm: realm,
+		DestinationRealm: realm, DestinationHost: string(cea.OriginHost), AuthApplicationId: 0,
+		ReAuthRequestType: base.ReAuthRequestTypeAuthorizeOnly,
+	}).(*base.ReAuthAnswer); ok {
+		t.Logf("RAA: Result-Code %d, flags %#x", raa.ResultCode, raa.Header.Flags)
+	}
+
+	if dpa, ok := p.exchange("dpa", &base.DisconnectPeerRequest{
+		Header: p.next(), OriginHost: host, OriginRealm: realm,
 		DisconnectCause: base.DisconnectCauseRebooting,
-	})
-	frames["dpa"] = p.answer(282)
-	var dpa base.DisconnectPeerAnswer
-	if err := dpa.Unmarshal(frames["dpa"]); err != nil {
-		t.Fatal(err)
-	}
-	if err := dpa.Validate(); err != nil {
-		t.Fatalf("DPA: Validate: %v", err)
-	}
-	if dpa.ResultCode != 2001 {
-		t.Fatalf("DPA: Result-Code %d", dpa.ResultCode)
+	}).(*base.DisconnectPeerAnswer); !ok || dpa.ResultCode != 2001 {
+		t.Fatalf("DPA: %+v", dpa)
 	}
 
-	if !*update {
-		return
-	}
-	dir := filepath.Join(capturesDir, "base")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, frame := range frames {
-		if err := os.WriteFile(filepath.Join(dir, name+".bin"), frame, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	source := fmt.Sprintf(`Frames received from a Diameter peer by internal/interop/peer_test.go.
+	p.writeSource(fmt.Sprintf(`Frames received from a Diameter peer by internal/interop/peer_test.go.
 
 Peer:     %s (Product-Name %q, Firmware-Revision %d)
 Image:    ci/freediameter/Dockerfile (Debian bookworm package "freediameter")
 Date:     %s
-Command:  go test -tags peer -run TestPeer -update ./internal/interop/
+Command:  go test -tags peer -run 'TestPeer$' -update ./internal/interop/
 
 Generated in CI against freeDiameter; no operator traffic.
-`, cea.OriginHost, cea.ProductName, cea.FirmwareRevision.V, time.Now().UTC().Format("2006-01-02"))
-	if err := os.WriteFile(filepath.Join(dir, "SOURCE"), []byte(source), 0o644); err != nil {
-		t.Fatal(err)
-	}
+`, cea.OriginHost, cea.ProductName, cea.FirmwareRevision.V, time.Now().UTC().Format("2006-01-02")))
 }
