@@ -1,0 +1,167 @@
+// Zh: BSF - HSS, GAA bootstrapping (Diameter application 16777221).
+//
+// Source: 3GPP TS 29.109 V18.1.0 (Release 18), published as
+// ETSI TS 129 109 V18.1.0 (2025-06); the latest Release 18 version.
+//   Commands:      §4.2 steps 1 and 3 (Multimedia-Auth-Request/Answer as Zh
+//                  defines them), §6.1 and §7.3 (code 303, the Cx code)
+//   Application:   §6.0 (16777221, vendor 3GPP)
+//   AVP table:     §6.3 table 6.1, the rows Zh uses: GBA-UserSecSettings,
+//                  GUSS-Timestamp, SHA-256-Indication
+//   Enumerations:  §6.3.1.22 (SHA-256-Indication)
+//   Result codes:  §6.2 (DIAMETER_ERROR_IDENTITY_UNKNOWN 5401)
+//
+// Dictionary: the Avp enum below holds the three AVPs of table 6.1 that a
+// Zh command carries. Table 6.1 is one table for Zh, Zn and Zpn; its other
+// rows (Transaction-Identifier, NAF-Id, ... Security-Feature-Response) are
+// used only by Zn and Zpn, which are not here, and belong with them.
+// §6.3 says the AVPs TS 29.229 defines for the Cx MAR/MAA "are used as they
+// are", so Public-Identity and SIP-Auth-Data-Item (with its members, the
+// grouped SIP-Digest-Authenticate and the Digest-* AVPs) resolve through
+// the import of ts29229/cx.proto, with Cx's codes, flags and grammars, and
+// the generated package uses cx.SipAuthDataItem. Base protocol AVPs come
+// from ietf/rfc6733/base.proto.
+//
+// Release compatibility (design §5.3a): every AVP that is required here is
+// also required in TS 29.109 V8.9.0 (Release 8, ETSI TS 129 109 V8.9.0).
+// Release 8 MAA has no SHA-256-Indication; the Release 8 commands are
+// otherwise the same.
+//
+// Rulings where the specification text needs reading:
+//   - The Zh commands re-use only the Cx command code (§7.3); their grammar
+//     is the one of §4.2, not TS 29.229 §6.1.7-6.1.8. MAR has no
+//     Supported-Features, SIP-Number-Auth-Items or Server-Name, and
+//     carries at most one SIP-Auth-Data-Item; MAA carries at most one
+//     SIP-Auth-Data-Item ("Only one AV shall be provided").
+//   - Vendor-Specific-Application-Id is { } in both commands (§6.1 keeps it
+//     required for backward compatibility); MAR lists Destination-Realm
+//     before Destination-Host. Both are kept as written.
+//   - The Zh MAA grammar has no Failed-AVP. It is transcribed as written: a
+//     Failed-AVP in a Zh MAA is an unknown AVP with the M-bit, which
+//     Validate reports with 5001, as RFC 6733 §4.1 has it for an AVP the
+//     command does not define.
+//   - §7.1 lists the re-used AVPs as "Authentication-Session-State,
+//     User-Name, Public-User-Identity and SIP-Auth-Data-Item"; the grammars
+//     and TS 29.229 name them Auth-Session-State and Public-Identity, which
+//     is what is used.
+//   - User-Name and Public-Identity: §4.2 step 1 wants exactly one of them
+//     in a push request and only User-Name otherwise, and step 3 wants both
+//     in the answer when the request had Public-Identity. These are
+//     procedure rules without a Result-Code of their own; Validate checks
+//     the grammar, in which both are optional.
+//   - GBA-UserSecSettings: table 6.1 spells the type "OctedString"; read as
+//     OctetString. Its content is the GUSS XML document of annex A, or the
+//     string "GUSS TIMESTAMP EQUAL" (§4.2 step 2); go-diam does not parse
+//     it.
+//
+// Each command carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.zh;
+
+import "3gpp/ts29229/cx.proto";
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/zh";
+
+// Avp is the Zh dictionary of 3GPP AVPs (vendor 10415): the rows of table
+// 6.1 that a Zh command carries. The M-bit is set where the flag rules say
+// "Must".
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // §6.3.1.1; table 6.1: M, V
+  GBA_USERSECSETTINGS = 400 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // §6.3.1.10; table 6.1: V, M must not
+  GUSS_TIMESTAMP = 409 [(diam.def) = {vendor: 10415, type: TIME}];
+  // §6.3.1.22; table 6.1: M, V
+  SHA_256_INDICATION = 421 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+}
+
+// SHA-256-Indication (§6.3.1.22). Absent means UICC_NOT_SUPPORT_SHA256.
+enum Sha256Indication {
+  SHA256_INDICATION_UICC_NOT_SUPPORT_SHA256 = 0;
+  SHA256_INDICATION_UICC_SUPPORT_SHA256 = 1;
+}
+
+// Multimedia-Auth-Request on Zh (§4.2 step 1)
+//
+// <Multimedia-Auth-Request> ::=<Diameter Header: 303, REQ, PXY, 16777221 >
+//   < Session-Id >
+//   { Vendor-Specific-Application-Id }
+//   { Auth-Session-State }             ; NO_STATE_MAINTAINED
+//   { Origin-Host }                    ; Address of BSF
+//   { Origin-Realm }                   ; Realm of BSF
+//   { Destination-Realm }              ; Realm of HSS
+//   [ Destination-Host ]               ; Address of the HSS
+//   [ User-Name ]                      ; IMPI from UE
+//   [ Public-Identity ]                ; IMPU from UE
+//   [ SIP-Auth-Data-Item ]             ; Authentication Scheme,
+//                                        Synchronization Failure
+//   [ GUSS-Timestamp ]                 ; Timestamp of GUSS in BSF
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MultimediaAuthRequest {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777221
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  godiam.base.AuthSessionState auth_session_state = 3;
+  string origin_host = 4;
+  string origin_realm = 5;
+  string destination_realm = 6;
+  optional string destination_host = 7;
+  optional string user_name = 8;
+  optional string public_identity = 9;
+  optional godiam.cx.SipAuthDataItem sip_auth_data_item = 10;
+  optional uint32 guss_timestamp = 11;
+  repeated godiam.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
+
+// Multimedia-Auth-Answer on Zh (§4.2 step 3)
+//
+// < Multimedia-Auth-Answer> ::= < Diameter Header: 303, PXY, 16777221 >
+//   < Session-Id >
+//   { Vendor-Specific-Application-Id }
+//   [ Result-Code ]
+//   [ Experimental-Result]
+//   { Auth-Session-State }             ; NO_STATE_MAINTAINED
+//   { Origin-Host }                    ; Address of HSS
+//   { Origin-Realm }                   ; Realm of HSS
+//   [ User-Name ]                      ; IMPI
+//   [ Public-Identity ]                ; IMPU
+//   [ SIP-Auth-Data-Item ]
+//   [ GBA-UserSecSettings ]            ; GUSS
+//   [ SHA-256-Indication ]             ; UICC supports SHA-256
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MultimediaAuthAnswer {
+  option (diam.command) = {
+    code: 303
+    app_id: 16777221
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  optional uint32 result_code = 3;
+  optional godiam.base.ExperimentalResult experimental_result = 4;
+  godiam.base.AuthSessionState auth_session_state = 5;
+  string origin_host = 6;
+  string origin_realm = 7;
+  optional string user_name = 8;
+  optional string public_identity = 9;
+  optional godiam.cx.SipAuthDataItem sip_auth_data_item = 10;
+  optional bytes gba_user_sec_settings = 11 [(diam.avp) = "GBA_USERSECSETTINGS"];
+  optional Sha256Indication sha256_indication = 12 [(diam.avp) = "SHA_256_INDICATION"];
+  repeated godiam.base.ProxyInfo proxy_info = 13;
+  repeated string route_record = 14;
+}
