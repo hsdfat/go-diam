@@ -1,0 +1,477 @@
+// S6m/S6n: MTC-IWF/MTC-AAA - HSS (Diameter application 16777310).
+//
+// Source: 3GPP TS 29.336 V18.2.0 (Release 18), published as
+// ETSI TS 129 336 V18.2.0 (2024-05), the same version as S6t.
+//   Commands:      §6.2.2 table 6.2.2/1, §6.2.3-6.2.4 (SIR/SIA)
+//   Application:   §6.1.8 (16777310, vendor 3GPP)
+//   AVP tables:    §6.4.1 table 6.4.1/1, all rows, and table 6.4.1/2 (the
+//                  re-used AVPs)
+//   Grouped AVPs:  §6.4.2, 6.4.5-6.4.8, 6.4.12-6.4.13
+//   Result codes:  §6.3.3 (5510, 5511)
+//
+// S6m and S6n share the application; the SIR-Flags bit 0 tells them apart
+// (§6.4.10). This file has its own dictionary although S6t, from the same
+// specification, is in ts29336/s6t.proto: the two applications have
+// different AVP tables (6.4.1/1-2 and 8.4.1-1-2), the S6m AVPs (Serving-Node,
+// T4-Data, Service-ID, ...) are not in the S6t dictionary, and
+// User-Identifier has another grammar on each (§6.4.2 with LMSI, §8.4.36
+// with Type-Of-External-Identifier). It sits in a subdirectory because
+// godiam.s6t owns proto/3gpp/ts29336.
+//
+// Table 6.4.1/2 has no M-bit column, so every re-used AVP carries the flag
+// rule of its defining specification:
+//   TS 29.329 V18.0.0 table 6.3.1      MSISDN (M, V)
+//   TS 29.229 V18.1.0 §6.3.29-6.3.31   Supported-Features, Feature-List-ID,
+//                                      Feature-List (M "May")
+//   TS 29.173 V18.0.0 table 6.4.1/1    LMSI, Serving-Node, MME-Name,
+//                                      MSC-Number, Additional-Serving-Node
+//                                      (M, V); MME-Realm, SGSN-Name,
+//                                      SGSN-Realm (V)
+//   TS 29.272 V18.7.0 table 7.3.1/1    SGSN-Number (M, V),
+//                                      MME-Number-for-MT-SMS (V)
+//   TS 29.338 V18.2.0 table 5.3.3.1/1  SM-RP-SMEA (M, V)
+//   TS 29.368 V18.0.0 table 6.4.1.1    Priority-Indication,
+//                                      Application-Port-Identifier (M, V)
+//   RFC 7683 §7.8, RFC 7944 §9.1,      OC-*, DRMP, Load and its AVPs (M
+//   RFC 8583 §7.5                      not required, sent clear)
+// Base protocol AVPs come from ietf/rfc6733/base.proto. Serving-Node and
+// Additional-Serving-Node carry the grammar TS 29.336 gives them (§6.4.12,
+// 6.4.13), not the longer TS 29.173 or TS 29.338 one.
+//
+// Release compatibility (design §5.3a): S6m first appears in Release 11;
+// V11.0.0 has placeholder codes, so the reference is TS 29.336 V11.1.0
+// (ETSI TS 129 336 V11.1.0), the first with IANA values. Every AVP that is
+// required here is also required there. Release 11 SIA carries
+// *[ Failed-AVP ]; [ Failed-AVP ] from the current release is used, as in
+// S6a. Release 11 Serving-Node lacks SGSN-Name, SGSN-Realm and
+// IP-SM-GW-Realm, and Release 11 Service-Parameters lacks
+// Application-Port-Identifier, all optional.
+//
+// Rulings where the specification text needs reading:
+//   - Vendor-Specific-Application-Id: §6.2.2 NOTE says it "is included as
+//     an optional AVP in all Command Code Format specifications" and that a
+//     receiver ignores it, but neither ABNF lists it. It has the M-bit set,
+//     so leaving it out would turn "ignore" into 5001. SIR and SIA carry it
+//     as [ Vendor-Specific-Application-Id ] after DRMP, as S6t does.
+//   - Supported-Features M-bit: §6.1.9 applies TS 29.229 §7.2, whose
+//     §7.2.1 sets it in requests and clears it in answers. The dictionary
+//     has it clear and SIR sets (diam.m) = true, as in Cx, Sh and S6t.
+//   - User-Identifier "shall not be empty" (§6.4.2), the combinations
+//     allowed in Serving-Node and Additional-Serving-Node (§6.4.12-6.4.13)
+//     and the HSS-Cause rules of T4-Data (§6.4.8) are procedure rules
+//     without a Result-Code of their own; Validate checks the grammar only.
+//   - HSS-Cause and SIR-Flags are Unsigned32 bit masks (tables 6.4.9/1,
+//     6.4.10/1); they are uint32 fields.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.s6m;
+
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/s6m";
+
+// Avp is the S6m/S6n dictionary of 3GPP AVPs (vendor 10415): table
+// 6.4.1/1, then the re-used 3GPP AVPs of table 6.4.1/2 and the AVPs inside
+// their grammars. The M-bit is set where the flag rules say "Must"; "May"
+// is left clear.
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // TS 29.229 §6.3.29; §6.1.9 sets the M-bit per message (see SIR)
+  SUPPORTED_FEATURES = 628 [(diam.def) = {vendor: 10415, type: GROUPED}];
+  // TS 29.229 §6.3.30
+  FEATURE_LIST_ID = 629 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.229 §6.3.31
+  FEATURE_LIST = 630 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+  // TS 29.329 §6.3.2 (M, V)
+  MSISDN = 701 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.102 (M, V)
+  SGSN_NUMBER = 1489 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.272 §7.3.159 (V, M must not)
+  MME_NUMBER_FOR_MT_SMS = 1645 [(diam.def) = {vendor: 10415, type: OCTET_STRING}];
+  // TS 29.173 §6.4.2 (M, V)
+  LMSI = 2400 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.173 §6.4.3 (M, V); S6m grammar §6.4.12
+  SERVING_NODE = 2401 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.173 §6.4.4 (M, V)
+  MME_NAME = 2402 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.5 (M, V)
+  MSC_NUMBER = 2403 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  // TS 29.173 §6.4.8 (M, V); S6m grammar §6.4.13
+  ADDITIONAL_SERVING_NODE = 2406 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // TS 29.173 §6.4.12 (V, M must not)
+  MME_REALM = 2408 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.13 (V, M must not)
+  SGSN_NAME = 2409 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.173 §6.4.14 (V, M must not)
+  SGSN_REALM = 2410 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  // TS 29.368 §6.4.7 (M, V)
+  PRIORITY_INDICATION = 3006 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  // TS 29.368 §6.4.11 (M, V)
+  APPLICATION_PORT_IDENTIFIER = 3010 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  IP_SM_GW_NUMBER = 3100 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  IP_SM_GW_NAME = 3101 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  USER_IDENTIFIER = 3102 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SERVICE_ID = 3103 [(diam.def) = {vendor: 10415, m: true, type: ENUMERATED}];
+  SCS_IDENTITY = 3104 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SERVICE_PARAMETERS = 3105 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  T4_PARAMETERS = 3106 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  SERVICE_DATA = 3107 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  T4_DATA = 3108 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  // §6.4.9, table 6.4.9/1: bit 0 Absent Subscriber, bit 1 Teleservice Not
+  // Provisioned, bit 2 Call Barred
+  HSS_CAUSE = 3109 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // §6.4.10, table 6.4.10/1: bit 0 S6m/S6n Indicator
+  SIR_FLAGS = 3110 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  EXTERNAL_IDENTIFIER = 3111 [(diam.def) = {vendor: 10415, m: true, type: UTF8_STRING}];
+  IP_SM_GW_REALM = 3112 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  // TS 29.338 §5.3.3.3 (M, V)
+  SM_RP_SMEA = 3309 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+}
+
+// IetfAvp holds the re-used IETF AVPs (no Vendor-Id), a separate dictionary
+// as in S6a, Sh and S6t.
+enum IetfAvp {
+  option (diam.dictionary) = true;
+  IETF_AVP_UNSPECIFIED = 0;
+  // RFC 7944 §9.1 (M must not)
+  DRMP = 301 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.1
+  OC_SUPPORTED_FEATURES = 621 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.2
+  OC_FEATURE_VECTOR = 622 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.3
+  OC_OLR = 623 [(diam.def) = {type: GROUPED}];
+  // RFC 7683 §7.4
+  OC_SEQUENCE_NUMBER = 624 [(diam.def) = {type: UNSIGNED64}];
+  // RFC 7683 §7.5
+  OC_VALIDITY_DURATION = 625 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 7683 §7.6
+  OC_REPORT_TYPE = 626 [(diam.def) = {type: ENUMERATED}];
+  // RFC 7683 §7.7
+  OC_REDUCTION_PERCENTAGE = 627 [(diam.def) = {type: UNSIGNED32}];
+  // RFC 8583 §7.4
+  SOURCEID = 649 [(diam.def) = {type: DIAMETER_IDENTITY}];
+  // RFC 8583 §7.1
+  LOAD = 650 [(diam.def) = {type: GROUPED}];
+  // RFC 8583 §7.2
+  LOAD_TYPE = 651 [(diam.def) = {type: ENUMERATED}];
+  // RFC 8583 §7.3
+  LOAD_VALUE = 652 [(diam.def) = {type: UNSIGNED64}];
+}
+
+// Service-ID (§6.4.3).
+enum ServiceId {
+  SERVICE_ID_DEVICE_TRIGGER = 0;
+  SERVICE_ID_SMS_MO = 1;
+}
+
+// Priority-Indication (TS 29.368 §6.4.7). Non-Priority and Priority.
+enum PriorityIndication {
+  PRIORITY_INDICATION_NON_PRIORITY = 0;
+  PRIORITY_INDICATION_PRIORITY = 1;
+}
+
+// DRMP (RFC 7944 §9.1).
+enum Drmp {
+  DRMP_PRIORITY_0 = 0;
+  DRMP_PRIORITY_1 = 1;
+  DRMP_PRIORITY_2 = 2;
+  DRMP_PRIORITY_3 = 3;
+  DRMP_PRIORITY_4 = 4;
+  DRMP_PRIORITY_5 = 5;
+  DRMP_PRIORITY_6 = 6;
+  DRMP_PRIORITY_7 = 7;
+  DRMP_PRIORITY_8 = 8;
+  DRMP_PRIORITY_9 = 9;
+  DRMP_PRIORITY_10 = 10;
+  DRMP_PRIORITY_11 = 11;
+  DRMP_PRIORITY_12 = 12;
+  DRMP_PRIORITY_13 = 13;
+  DRMP_PRIORITY_14 = 14;
+  DRMP_PRIORITY_15 = 15;
+}
+
+// OC-Report-Type (RFC 7683 §7.6).
+enum OcReportType {
+  OC_REPORT_TYPE_HOST_REPORT = 0;
+  OC_REPORT_TYPE_REALM_REPORT = 1;
+}
+
+// Load-Type (RFC 8583 §7.2).
+enum LoadType {
+  LOAD_TYPE_HOST = 0;
+  LOAD_TYPE_PEER = 1;
+}
+
+// OC-Supported-Features (RFC 7683 §7.1)
+//
+// OC-Supported-Features ::= < AVP Header: 621 >
+//   [ OC-Feature-Vector ]
+//   *[ AVP ]
+message OcSupportedFeatures {
+  option (diam.extensible) = true;
+  optional uint64 oc_feature_vector = 1;
+}
+
+// OC-OLR (RFC 7683 §7.3)
+//
+// OC-OLR ::= < AVP Header: 623 >
+//   < OC-Sequence-Number >
+//   < OC-Report-Type >
+//   [ OC-Reduction-Percentage ]
+//   [ OC-Validity-Duration ]
+//   *[ AVP ]
+message OcOlr {
+  option (diam.extensible) = true;
+  uint64 oc_sequence_number = 1 [(diam.fixed) = true];
+  OcReportType oc_report_type = 2 [(diam.fixed) = true];
+  optional uint32 oc_reduction_percentage = 3;
+  optional uint32 oc_validity_duration = 4;
+}
+
+// Load (RFC 8583 §7.1)
+//
+// Load ::= < AVP Header: 650 >
+//   [ Load-Type ]
+//   [ Load-Value ]
+//   [ SourceID ]
+//   *[ AVP ]
+message Load {
+  option (diam.extensible) = true;
+  optional LoadType load_type = 1;
+  optional uint64 load_value = 2;
+  optional string sourceid = 3;
+}
+
+// Supported-Features (TS 29.229 §6.3.29)
+//
+// Supported-Features ::= < AVP header: 628 10415 >
+//   { Vendor-Id }
+//   { Feature-List-ID }
+//   { Feature-List }
+//   *[AVP]
+message SupportedFeatures {
+  option (diam.extensible) = true;
+  uint32 vendor_id = 1;
+  uint32 feature_list_id = 2;
+  uint32 feature_list = 3;
+}
+
+// User-Identifier (§6.4.2)
+//
+// User-Identifier ::= <AVP header: 3102 10415>
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ External-Identifier ]
+//   [ LMSI ]
+//   *[AVP]
+message UserIdentifier {
+  option (diam.extensible) = true;
+  optional string user_name = 1;
+  optional bytes msisdn = 2;
+  optional string external_identifier = 3;
+  optional bytes lmsi = 4;
+}
+
+// Service-Parameters (§6.4.5)
+//
+// Service-Parameters ::= <AVP header: 3105 10415>
+//   [ T4-Parameters ]
+//   [ Application-Port-Identifier ]
+//   *[AVP]
+//
+// Application-Port-Identifier was added after Release 11.
+message ServiceParameters {
+  option (diam.extensible) = true;
+  optional T4Parameters t4_parameters = 1;
+  optional uint32 application_port_identifier = 2;
+}
+
+// T4-Parameters (§6.4.6)
+//
+// T4-Parameters ::= <AVP header: 3106 10415>
+//   [ Priority-Indication ]
+//   [ SM-RP-SMEA ]
+//   *[AVP]
+message T4Parameters {
+  option (diam.extensible) = true;
+  optional PriorityIndication priority_indication = 1;
+  optional bytes sm_rp_smea = 2;
+}
+
+// Service-Data (§6.4.7)
+//
+// Service-Data ::= <AVP header: 3107 10415>
+//   [ T4-Data ]
+//   *[AVP]
+message ServiceData {
+  option (diam.extensible) = true;
+  optional T4Data t4_data = 1;
+}
+
+// T4-Data (§6.4.8)
+//
+// T4-Data ::= <AVP header: 3108 10415>
+//   [ HSS-Cause ]
+//   [ Serving-Node ]
+//   *[ Additional-Serving-Node ]
+//   *[AVP]
+message T4Data {
+  option (diam.extensible) = true;
+  optional uint32 hss_cause = 1;
+  optional ServingNode serving_node = 2;
+  repeated AdditionalServingNode additional_serving_node = 3;
+}
+
+// Serving-Node (§6.4.12, originally TS 29.173 §6.4.3)
+//
+// Serving-Node ::= <AVP header: 2401 10415>
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ SGSN-Number ]
+//   [ MME-Name ]
+//   [ MME-Realm ]
+//   [ MME-Number-for-MT-SMS ]
+//   [ MSC-Number ]
+//   [ IP-SM-GW-Number ]
+//   [ IP-SM-GW-Name ]
+//   [ IP-SM-GW-Realm ]
+//   *[AVP]
+message ServingNode {
+  option (diam.extensible) = true;
+  optional string sgsn_name = 1;
+  optional string sgsn_realm = 2;
+  optional bytes sgsn_number = 3;
+  optional string mme_name = 4;
+  optional string mme_realm = 5;
+  optional bytes mme_number_for_mt_sms = 6;
+  optional bytes msc_number = 7;
+  optional bytes ip_sm_gw_number = 8;
+  optional string ip_sm_gw_name = 9;
+  optional string ip_sm_gw_realm = 10;
+}
+
+// Additional-Serving-Node (§6.4.13, originally TS 29.173 §6.4.8)
+//
+// Additional-Serving-Node ::= <AVP header: 2406 10415>
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ SGSN-Number ]
+//   [ MME-Name ]
+//   [ MME-Realm ]
+//   [ MME-Number-for-MT-SMS ]
+//   [ MSC-Number ]
+//   *[AVP]
+message AdditionalServingNode {
+  option (diam.extensible) = true;
+  optional string sgsn_name = 1;
+  optional string sgsn_realm = 2;
+  optional bytes sgsn_number = 3;
+  optional string mme_name = 4;
+  optional string mme_realm = 5;
+  optional bytes mme_number_for_mt_sms = 6;
+  optional bytes msc_number = 7;
+}
+
+// Subscriber-Information-Request (6.2.3)
+//
+// < Subscriber-Information-Request> ::= < Diameter Header: 8388641, REQ, PXY, 16777310 >
+//   < Session-Id >
+//   [ DRMP ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { User-Identifier }
+//   [ Service-ID ]
+//   [ SCS-Identity ]
+//   [ Service-Parameters ]
+//   { SIR-Flags }
+//   [ OC-Supported-Features ]
+//   *[ Supported-Features ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[ AVP ]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§6.2.2 NOTE; see the
+// file header).
+message SubscriberInformationRequest {
+  option (diam.command) = {
+    code: 8388641
+    app_id: 16777310
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  UserIdentifier user_identifier = 9;
+  optional ServiceId service_id = 10;
+  optional bytes scs_identity = 11;
+  optional ServiceParameters service_parameters = 12;
+  uint32 sir_flags = 13;
+  optional OcSupportedFeatures oc_supported_features = 14;
+  // TS 29.229 §7.2.1 (by §6.1.9): M-bit set in a request
+  repeated SupportedFeatures supported_features = 15 [(diam.m) = true];
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
+
+// Subscriber-Information-Answer (6.2.4)
+//
+// < Subscriber-Information-Answer> ::= < Diameter Header: 8388641, PXY, 16777310 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ OC-Supported-Features ]
+//   [ OC-OLR ]
+//   *[ Load ]
+//   *[ Supported-Features ]
+//   *[ User-Identifier ]
+//   [ Service-Data ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[ AVP ]
+//
+// [ Vendor-Specific-Application-Id ] follows DRMP (§6.2.2 NOTE).
+message SubscriberInformationAnswer {
+  option (diam.command) = {
+    code: 8388641
+    app_id: 16777310
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional OcSupportedFeatures oc_supported_features = 9;
+  optional OcOlr oc_olr = 10;
+  repeated Load load = 11;
+  repeated SupportedFeatures supported_features = 12;
+  repeated UserIdentifier user_identifier = 13;
+  optional ServiceData service_data = 14;
+  optional godiam.base.FailedAvp failed_avp = 15;
+  repeated godiam.base.ProxyInfo proxy_info = 16;
+  repeated string route_record = 17;
+}
