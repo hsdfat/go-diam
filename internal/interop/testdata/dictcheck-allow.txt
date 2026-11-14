@@ -42,3 +42,8 @@
 #
 # S6m/S6n (proto/3gpp/ts29336/s6m/s6m.proto, TS 29.336 V18.2.0).
 3010 10415 name TS 29.368 §6.4.11 and TS 29.336 §6.4.5 name this AVP Application-Port-Identifier; go-diameter spells it Application-Port-Identifer
+#
+# S6c (proto/3gpp/ts29338/s6c.proto, TS 29.338 V18.2.0). Table 5.3.3.1/2
+# NOTE 1 says its M-bit column overrides the defining specification.
+1645 10415 m TS 29.338 table 5.3.3.1/2: MME-Number-for-MT-SMS "Must" in S6c; go-diameter has the TS 29.272 rule (V, M must not)
+2408 10415 m TS 29.338 table 5.3.3.1/2: MME-Realm "Must" in S6c; go-diameter has the TS 29.173 rule (V, M must not)
