@@ -602,3 +602,40 @@ The text above is unchanged; these win.
   the answer to a request with Public-Identity. The grammars have both
   optional and the rules have no Result-Code, so `Validate` checks the
   grammar only.
+- **SWx release, and re-used AVPs taken through imports.** SWx is
+  transcribed from TS 29.273 V18.6.0, the latest Release 18 version, with
+  V8.16.0 as the Release 8 reference; it is the first application of
+  TS 29.273, so it owns `proto/3gpp/ts29273`. Its commands are the Cx ones
+  under application 16777265, and table 8.2.3.0/2 leaves the M-bit of most
+  re-used AVPs to their defining specification, which is what `cx.proto`
+  and `s6a.proto` already carry. So `swx.proto` imports both and resolves
+  those AVPs, and their grouped types, through the imports, as S13 does
+  with `s6a.proto`. Its own dictionaries hold the TS 29.273 AVPs, the
+  re-used AVPs neither import has (Subscription-Id, MIP6-Feature-Vector,
+  BSSID, the RFC 5580 location AVPs, Logical-Access-ID), those whose S6a
+  entry carries a TS 29.272 override (RAT-Type, Visited-Network-Identifier)
+  and those both imports define, which §5.3 cannot resolve (DRMP, OC-*,
+  Load, Supported-Features, Confidentiality-Key, Integrity-Key). The
+  generator needed no change.
+- **§5.3 / C3, members of an imported grouped AVP keep its flags (SWx).**
+  APN-Configuration, Specific-APN-Info and Active-APN come from
+  `s6a.proto`, so Visited-Network-Identifier inside them is sent with the
+  S6a M-bit (clear, TS 29.272 table 7.3.1/2) where TS 29.229 sets it.
+  Restating the S6a subscription subtree for one flag was not worth it:
+  NOTE 2 of tables 8.2.3.0/1 and /2 says a receiver ignores the M-bit of an
+  AVP it understands, and an AVP without the M-bit is never rejected. At
+  the top level of MAR and SAR the SWx entry (M set) applies.
+- **SWx header and table readings.** The PPR header is "305, REQ" without
+  PXY in V18.6.0 and V8.16.0 alike, while PPA has PXY; both are transcribed
+  as written. Table 8.2.3.0/1 gives Access-Network-Info code 1524 (SSID's
+  code); clause 5.2.3.24 and table 5.2.3.1/1 give 1526, which is used.
+  AN-Trusted is V with M clear in the SWx table and M,V in the STa table;
+  the SWx table is used. RAT-Type has the TS 29.212 rule (M clear), not the
+  S6a one (M set) nor the STa one (M,V).
+- **§8 gate 3 for SWx.** go-diameter v4.6.0 has an SWx application from
+  TS 29.273 V9.2.0 with MAR/MAA, SAR/SAA and RTR/RTA, so the interop is
+  built from it, like S6a, and MAA has a benchmark. It has no PPR/PPA but
+  reads them, since it decodes AVPs by application. The AVPs it has only
+  under other applications are built from those (`fiorixSwxGaps`), and the
+  ones it has nowhere carry code and M-bit restated from the specification
+  (`swxRestated` in `internal/interop/swx_test.go`).

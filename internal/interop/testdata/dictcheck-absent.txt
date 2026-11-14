@@ -286,6 +286,7 @@
 400 10415 GBA_USERSECSETTINGS
 409 10415 GUSS_TIMESTAMP
 421 10415 SHA_256_INDICATION
+
 # SWx, proto/3gpp/ts29273/swx.proto. go-diameter's SWx application has the
 # Release 9 AVPs; the ones below are later or come from STa (§5.2.3), RFC
 # 5580 and ETSI ES 283 034. The re-used AVPs that swx.proto takes from

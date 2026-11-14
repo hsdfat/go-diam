@@ -82,8 +82,10 @@ errors are tested in `cmd/protoc-gen-go-diam/main_test.go`.
    it points to, and keep its own dictionary for the rest (SLh imports
    `s6a.proto` for MSISDN, SGSN-Number, GMLC-Number and
    Supported-Features; Zh imports `cx.proto` for Public-Identity and
-   SIP-Auth-Data-Item); an entry in its own dictionary wins over an
-   imported one of the same name.
+   SIP-Auth-Data-Item; SWx imports `cx.proto` and `s6a.proto`). An AVP
+   whose flags differ from the imported entry, or whose name two imports
+   both define, goes in its own dictionary; an entry in its own
+   dictionary wins over an imported one of the same name.
 3. **Generate** with `make generate` and commit the output.
 4. **Pass the gates.** An application is listed as *verified* only when all
    of these hold:
