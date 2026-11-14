@@ -26,12 +26,13 @@ b, err := ulr.Marshal()
 > today: the runtime (`diam`), the generator (`cmd/protoc-gen-go-diam`), the
 > RFC 6733 base protocol (`base`), S6a/S6d and S13/S13' from TS 29.272
 > (`s6a`, `s13`), Cx/Dx from TS 29.229 (`cx`), Sh/Dh from TS 29.329
-> (`sh`) and S6t and S6m/S6n from TS 29.336 (`s6t`, `s6m`), each tested in
-> both directions against fiorix/go-diameter (for Cx, Sh, S6t and S6m, which
-> go-diameter has no dictionary for, AVP by AVP; see [Coverage](#coverage)).
-> Captures from freeDiameter are committed for three of the six base command
-> pairs (CEA, DWA, DPA) and none for the 3GPP applications, so all seven are
-> still *spec-only*. The API may still change before `v1.0.0`.
+> (`sh`), S6t and S6m/S6n from TS 29.336 (`s6t`, `s6m`) and S6c from
+> TS 29.338 (`s6c`), each tested in both directions against
+> fiorix/go-diameter (for Cx, Sh, S6t, S6m and S6c, which go-diameter has no
+> dictionary for, AVP by AVP; see [Coverage](#coverage)). Captures from
+> freeDiameter are committed for three of the six base command pairs (CEA,
+> DWA, DPA) and none for the 3GPP applications, so all eight are still
+> *spec-only*. The API may still change before `v1.0.0`.
 
 The same with the base protocol:
 
@@ -108,7 +109,8 @@ Packages: `github.com/hsdfat/go-diam/diam` (runtime) and one generated
 package per application, today `github.com/hsdfat/go-diam/base`,
 `github.com/hsdfat/go-diam/s6a`, `github.com/hsdfat/go-diam/s13`,
 `github.com/hsdfat/go-diam/cx`, `github.com/hsdfat/go-diam/sh`,
-`github.com/hsdfat/go-diam/s6t` and `github.com/hsdfat/go-diam/s6m`. Generated
+`github.com/hsdfat/go-diam/s6t`, `github.com/hsdfat/go-diam/s6m` and
+`github.com/hsdfat/go-diam/s6c`. Generated
 code is committed in the repository. You only need the generator if you
 [define your own application](#defining-your-own-application).
 
@@ -352,7 +354,7 @@ Statuses:
 | SWx | TS 29.273 | 1 | planned |
 | S6t (CIR/CIA, RIR/RIA, NIR/NIA) | TS 29.336 V18.2.0 | 1 | spec-only: all 6 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no S6t application: its side is built from the S6t AVPs it defines under S6a, S13, SWx, Ro/Rf, Rx and base (Terminal-Information, Visited-PLMN-Id, PDN-Type, Served-Party-IP-Address, User-CSG-Information, MSISDN, Charged-Party, Supported-Features, Service-Selection, DRMP, OC-\*, Load, ...), and decodes each AVP in the application that defines it; the 109 AVPs it defines nowhere (User-Identifier, External-Identifier, the Monitoring-Event, AESE, NIDD, group-report and location AVPs, ...) carry codes and flags restated from the spec in the test. 31 of 140 dictionary entries cross-checked, with 3 M-bit disagreements where TS 29.336 table 8.4.1-2 clears the bit (listed in `internal/interop/testdata/dictcheck-allow.txt`), the 109 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6t as opaque AVPs); no peer capture yet |
 | S6m/S6n (SIR/SIA) | TS 29.336 V18.2.0 | 1 | spec-only: both commands byte-identical with go-diameter in both directions, every grouped AVP of the commands and every Serving-Node member, fuzzed. go-diameter has no S6m application: its side is built from the S6m AVPs it defines under Ro/Rf, S6a and base (Serving-Node, MME-Name, MME-Realm, SGSN-Number, MME-Number-for-MT-SMS, Priority-Indication, Application-Port-Identifier, MSISDN, Supported-Features, DRMP, OC-\*, Load), and decodes each AVP in the application that defines it; the 19 AVPs it defines nowhere (User-Identifier, Service-Parameters, T4-Data, SIR-Flags, LMSI, MSC-Number, Additional-Serving-Node, the IP-SM-GW AVPs, SM-RP-SMEA, ...) carry codes and flags restated from the spec in the test. 23 of 42 dictionary entries cross-checked, with one name disagreement (go-diameter spells code 3010 Application-Port-Identifer, listed in `internal/interop/testdata/dictcheck-allow.txt`), the 19 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6m as opaque AVPs); no peer capture yet. Its own package, not shared with S6c: TS 29.338 is another specification, with its own AVP table and a longer Serving-Node grammar |
-| S6c | TS 29.338 | 1 | planned |
+| S6c (SRR/SRA, ALR/ALA, RDR/RDA) | TS 29.338 V18.2.0 | 1 | spec-only: all 6 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no S6c application: its side is built from the S6c AVPs it defines under Ro/Rf, S6a, Rx and base (Serving-Node, MME-Name, MME-Realm, SGSN-Number, MME-Number-for-MT-SMS, MSISDN, Supported-Features, DRMP), and decodes each AVP in the application that defines it; the 48 AVPs of the commands it defines nowhere (User-Identifier, SC-Address, SM-RP-\*, the delivery-outcome, absent-user, SMSF and IP-SM-GW AVPs, SMSMI-Correlation-ID, ...) carry codes and flags restated from the spec in the test. 10 of 61 dictionary entries cross-checked, with 2 M-bit disagreements where TS 29.338 table 5.3.3.1/2 sets the bit (listed in `internal/interop/testdata/dictcheck-allow.txt`), the 51 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode S6c as opaque AVPs); no peer capture yet |
 | SLh | TS 29.173 | 1 | planned |
 | Zh | TS 29.109 | 1 | planned |
 | Credit-Control | RFC 8506 | 2 | prototype (CCR/CCA) |
@@ -392,7 +394,7 @@ evidence:
 3. **Interop.** Each command is built once with go-diameter and once with
    go-diam; the bytes must be identical, and each library must decode and
    re-encode the other's output. Where go-diameter has no dictionary for an
-   application (Cx/Dx, Sh/Dh, S6t, S6m), it decodes each AVP with its definition from
+   application (Cx/Dx, Sh/Dh, S6t, S6m, S6c), it decodes each AVP with its definition from
    whichever of its applications has one, and the AVPs it defines nowhere
    are listed in the test with their code and flags restated from the
    specification.

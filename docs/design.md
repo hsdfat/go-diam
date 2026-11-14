@@ -603,3 +603,15 @@ The text above is unchanged; these win.
   grammar (IP-SM-GW-SBI-Support-Indicator) than TS 29.336 does. One
   application per proto file and package (C3) keeps them apart: `s6m` and
   `s6c`.
+- **S6c release.** S6c is transcribed from TS 29.338 V18.2.0, the latest
+  Release 18 version, with V11.0.0 as the oldest-release reference (S6c
+  starts in Release 11). The S6a and S6t rulings apply: re-used AVPs in the
+  application's own dictionary with the M-bit of table 5.3.3.1/2, which
+  sets it for MME-Realm and MME-Number-for-MT-SMS and clears it for DRMP;
+  Supported-Features with the M-bit in requests only (§4.9). The six
+  per-node delivery-outcome AVPs share one grammar and one message type
+  (`DeliveryOutcome`, §5.2: the code comes from the referring field), and
+  have no `*[ AVP ]`. SMSMI-Correlation-ID is 3324 from table 6.3.3.1/1,
+  where its ABNF writes 3308. The interop of §8 gate 3 is built AVP by AVP
+  (`s6cRestated`), with `s6cM` applying the two table 5.3.3.1/2 M-bits on
+  go-diameter's side; no benchmark.
