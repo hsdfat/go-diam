@@ -67,9 +67,10 @@
 //     for the names that start with a digit (3GPP2-MEID,
 //     3GPP-Charging-Characteristics, 5QI).
 //
-// Not here: the S13/S13' commands ECR/ECA (§7.2.19-7.2.20) and the S7a/S7d
-// commands UVR/UVA, CVR/CVA and the 16777308 forms of IDR/DSR/RSR
-// (§7.2.9-7.2.24); their AVPs are in the dictionary.
+// Not here: the S13/S13' commands ECR/ECA (§7.2.19-7.2.20), which are in
+// ts29272/s13/s13.proto and import this file, and the S7a/S7d commands
+// UVR/UVA, CVR/CVA and the 16777308 forms of IDR/DSR/RSR (§7.2.9-7.2.24);
+// their AVPs are in the dictionary.
 //
 // Each command and grouped message carries its ABNF as a comment.
 syntax = "proto3";

@@ -1,0 +1,123 @@
+// S13/S13': MME/SGSN - EIR (Diameter application 16777252).
+//
+// Source: 3GPP TS 29.272 V18.7.0 (Release 18), published as
+// ETSI TS 129 272 V18.7.0 (2026-10), the same version as S6a/S6d.
+//   Commands:      §7.2.2 table 7.2.2/2, §7.2.19-7.2.20 (ECR/ECA)
+//   Application:   §7.1.8 (16777252, vendor 3GPP)
+//   Procedure:     §6.2.1 (ME Identity Check), tables 6.2.1.1/1 and /2
+//   Result codes:  §7.4.3.5 (DIAMETER_ERROR_EQUIPMENT_UNKNOWN, 5422)
+//
+// This file has no dictionary of its own. Table 7.3.1/1 is one table for
+// S6a/S6d, S7a/S7d and S13/S13', and ts29272/s6a.proto transcribes all of
+// it, with DRMP from table 7.3.1/2 in its IetfAvp dictionary. The S13 AVPs
+// (Terminal-Information, IMEI, Software-Version, 3GPP2-MEID,
+// Equipment-Status, DRMP) resolve there through the import, and so do the
+// grouped Terminal-Information and the EquipmentStatus and Drmp
+// enumerations: S13 uses the same codes, flags and grammars as S6a, so
+// nothing is restated here. Base protocol AVPs come from
+// ietf/rfc6733/base.proto.
+//
+// Release compatibility (design §5.3a): every AVP that is required here is
+// also required in TS 29.272 V8.14.0 (Release 8). Release 8 ECR and ECA have
+// no DRMP, and Release 8 ECA carries *[ Failed-AVP ]; [ Failed-AVP ] from
+// the current release is used here, as in S6a. Release 8 names the
+// Equipment-Status values WHITELISTED, BLACKLISTED and GREYLISTED; the
+// numbers are the same, and the names are the current release's.
+//
+// Rulings where the specification text needs reading:
+//   - Terminal-Information: table 6.2.1.1/1 says only IMEI and
+//     Software-Version are used on S13, and §6.2.1.2 says the MME/SGSN
+//     includes IMEI. The grouped AVP (§7.3.3) has all three members
+//     optional, including 3GPP2-MEID; the grammar is what Validate checks,
+//     so a Terminal-Information without IMEI or with 3GPP2-MEID passes and
+//     3GPP2-MEID decodes into its field.
+//   - Equipment-Status is "C" in table 6.2.1.1/2: present when the result is
+//     DIAMETER_SUCCESS. That is a procedure rule, not grammar; Validate does
+//     not tie it to Result-Code.
+//   - User-Name (the IMSI) is optional ([ User-Name ]) in both releases.
+//
+// Each command carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.s13;
+
+import "3gpp/ts29272/s6a.proto";
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/s13";
+
+// ME-Identity-Check-Request (7.2.19)
+//
+// < ME-Identity-Check-Request > ::= < Diameter Header: 324, REQ, PXY, 16777252 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   { Terminal-Information }
+//   [ User-Name ]
+//   *[ AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MeIdentityCheckRequest {
+  option (diam.command) = {
+    code: 324
+    app_id: 16777252
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.s6a.Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  godiam.base.AuthSessionState auth_session_state = 4;
+  string origin_host = 5;
+  string origin_realm = 6;
+  optional string destination_host = 7;
+  string destination_realm = 8;
+  godiam.s6a.TerminalInformation terminal_information = 9;
+  optional string user_name = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
+
+// ME-Identity-Check-Answer (7.2.20)
+//
+// < ME-Identity-Check-Answer> ::= < Diameter Header: 324, PXY, 16777252 >
+//   < Session-Id >
+//   [ DRMP ]
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Equipment-Status ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message MeIdentityCheckAnswer {
+  option (diam.command) = {
+    code: 324
+    app_id: 16777252
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.s6a.Drmp drmp = 2;
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 3;
+  optional uint32 result_code = 4;
+  optional godiam.base.ExperimentalResult experimental_result = 5;
+  godiam.base.AuthSessionState auth_session_state = 6;
+  string origin_host = 7;
+  string origin_realm = 8;
+  optional godiam.s6a.EquipmentStatus equipment_status = 9;
+  optional godiam.base.FailedAvp failed_avp = 10;
+  repeated godiam.base.ProxyInfo proxy_info = 11;
+  repeated string route_record = 12;
+}
