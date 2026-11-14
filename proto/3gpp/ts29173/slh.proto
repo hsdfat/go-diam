@@ -1,0 +1,236 @@
+// SLh: GMLC - HSS (Diameter application 16777291).
+//
+// Source: 3GPP TS 29.173 V18.0.0 (Release 18), published as
+// ETSI TS 129 173 V18.0.0 (2024-05); the latest Release 18 version.
+//   Commands:      §6.2.2 table 6.2.2/1, §6.2.3-6.2.4 (RIR/RIA)
+//   Application:   §6.1.8 (16777291, vendor 3GPP)
+//   AVP tables:    §6.4.1 table 6.4.1/1 (all rows) and table 6.4.1/2
+//                  (re-used AVPs)
+//   Grouped AVPs:  §6.4.3 (Serving-Node), §6.4.8 (Additional-Serving-Node)
+//   Procedure:     §5.2.1, tables 5.2.1.1/1 and 5.2.1.1/2
+//   Result codes:  §6.3 (DIAMETER_ERROR_UNAUTHORIZED_REQUESTING_NETWORK
+//                  5490, DIAMETER_ERROR_ABSENT_USER 4201; USER_UNKNOWN
+//                  5001 from TS 29.229)
+//
+// Dictionary: the Avp enum below holds the twelve AVPs of table 6.4.1/1 and
+// 3GPP-AAA-Server-Name, which table 6.4.1/2 re-uses from TS 29.273 and which
+// no other schema in this repository defines yet. The other re-used AVPs of
+// table 6.4.1/2 resolve through the import of ts29272/s6a.proto, because
+// that file already holds them with the flag rules of the specification
+// table 6.4.1/2 points to, and table 6.4.1/2 gives no rule of its own:
+//   MSISDN               TS 29.329 table 6.3.1: M, V   (s6a MSISDN: M, V)
+//   SGSN-Number          TS 29.272 table 7.3.1/1: M, V (s6a SGSN_NUMBER)
+//   GMLC-Number          TS 29.272 table 7.3.1/1: M, V (s6a GMLC_NUMBER)
+//   Supported-Features,  TS 29.229 table 6.3.0.1: V, M "May" / "Must not"
+//   Feature-List-ID,     (s6a entries, M clear; the grouped type is
+//   Feature-List         s6a.SupportedFeatures)
+// GMLC-Address is in s6a.proto too, but there with the M-bit cleared by
+// TS 29.272 table 7.3.1/2; on SLh table 6.4.1/1 sets it, so SLh has its own
+// entry, which wins over the imported one (design §5.3). Base protocol AVPs
+// come from ietf/rfc6733/base.proto.
+//
+// Release compatibility (design §5.3a): SLh first appears in Release 9;
+// there is no Release 8 SLh. Every AVP that is required here is also
+// required in TS 29.173 V9.4.0 (Release 9, ETSI TS 129 173 V9.4.0). Later
+// releases added only optional AVPs: SGSN-Name and SGSN-Realm in the
+// grouped AVPs (V12.0.0) and RIA-Flags (V12.1.0). Release 9 to 13 RIA carries *[ Failed-AVP ]; V14.0.0 (CR 0022)
+// made it [ Failed-AVP ], which is used here, as in S6a.
+//
+// Rulings where the specification text needs reading:
+//   - Supported-Features M-bit: table 6.4.1/2 points to TS 29.229 for the
+//     AVP, whose flag rule is "May"; unlike Sh, TS 29.173 has no clause
+//     applying TS 29.229 §7.2.1 (M set in requests). The M-bit is left
+//     clear in both directions, as in S6a; a peer that sets it is still
+//     decoded.
+//   - User-Name and MSISDN in RIR are each "C" (present if the other is
+//     absent, table 5.2.1.1/1), and the RIA AVPs after Origin-Realm are
+//     conditional on DIAMETER_SUCCESS (table 5.2.1.1/2). Both grammars have
+//     them optional and the conditions have no Result-Code of their own, so
+//     Validate checks the grammar only.
+//   - Vendor-Specific-Application-Id shall not be sent and shall be ignored
+//     on receipt (§6.2.2); it stays in the grammar as [ ], as written.
+//   - The member order of Serving-Node (§6.4.3) and
+//     Additional-Serving-Node (§6.4.8) differs (SGSN-Name and SGSN-Realm
+//     before MME-Name in one, after it in the other); each is transcribed
+//     as written. Order inside a grouped AVP does not matter on decode.
+//   - LCS-Capabilities-Sets and RIA-Flags are bit masks (§6.4.6, §6.4.15)
+//     and stay Unsigned32; bit 0 of RIA-Flags is
+//     Combined-MME/SGSN-Supporting-Optimized-LCS-Proc.
+//
+// Each command and grouped message carries its ABNF as a comment.
+syntax = "proto3";
+
+package godiam.slh;
+
+import "3gpp/ts29272/s6a.proto";
+import "diam/options.proto";
+import "ietf/rfc6733/base.proto";
+
+option go_package = "github.com/hsdfat/go-diam/slh";
+
+// Avp is the SLh dictionary of 3GPP AVPs (vendor 10415): table 6.4.1/1 and
+// 3GPP-AAA-Server-Name from table 6.4.1/2. The M-bit is set where the flag
+// rules say "Must".
+enum Avp {
+  option (diam.dictionary) = true;
+  AVP_UNSPECIFIED = 0;
+  // TS 29.273 §8.2.3.24, table 8.2.3.0/1: M, V
+  TGPP_AAA_SERVER_NAME = 318 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  LMSI = 2400 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  SERVING_NODE = 2401 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  MME_NAME = 2402 [(diam.def) = {vendor: 10415, m: true, type: DIAMETER_IDENTITY}];
+  MSC_NUMBER = 2403 [(diam.def) = {vendor: 10415, m: true, type: OCTET_STRING}];
+  LCS_CAPABILITIES_SETS = 2404 [(diam.def) = {vendor: 10415, m: true, type: UNSIGNED32}];
+  // table 6.4.1/1: M, V (TS 29.272 table 7.3.1/2 clears M on S6a)
+  GMLC_ADDRESS = 2405 [(diam.def) = {vendor: 10415, m: true, type: ADDRESS}];
+  ADDITIONAL_SERVING_NODE = 2406 [(diam.def) = {vendor: 10415, m: true, type: GROUPED}];
+  PPR_ADDRESS = 2407 [(diam.def) = {vendor: 10415, m: true, type: ADDRESS}];
+  // table 6.4.1/1: V, M must not
+  MME_REALM = 2408 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SGSN_NAME = 2409 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  SGSN_REALM = 2410 [(diam.def) = {vendor: 10415, type: DIAMETER_IDENTITY}];
+  RIA_FLAGS = 2411 [(diam.def) = {vendor: 10415, type: UNSIGNED32}];
+}
+
+// LCS-Routing-Info-Request (§6.2.3)
+//
+// < LCS-Routing-Info-Request> ::= < Diameter Header: 8388622, REQ, PXY, 16777291 >
+//   < Session-Id >
+//   [ Vendor-Specific-Application-Id ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   [ Destination-Host ]
+//   { Destination-Realm }
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ GMLC-Number ]
+//   *[ Supported-Features ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+//   *[ AVP ]
+message LcsRoutingInfoRequest {
+  option (diam.command) = {
+    code: 8388622
+    app_id: 16777291
+    request: true
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  godiam.base.AuthSessionState auth_session_state = 3;
+  string origin_host = 4;
+  string origin_realm = 5;
+  optional string destination_host = 6;
+  string destination_realm = 7;
+  optional string user_name = 8;
+  optional bytes msisdn = 9;
+  optional bytes gmlc_number = 10;
+  repeated godiam.s6a.SupportedFeatures supported_features = 11;
+  repeated godiam.base.ProxyInfo proxy_info = 12;
+  repeated string route_record = 13;
+}
+
+// LCS-Routing-Info-Answer (§6.2.4)
+//
+// < LCS-Routing-Info-Answer> ::= < Diameter Header: 8388622, PXY, 16777291 >
+//   < Session-Id >
+//   [ Vendor-Specific-Application-Id ]
+//   [ Result-Code ]
+//   [ Experimental-Result ]
+//   { Auth-Session-State }
+//   { Origin-Host }
+//   { Origin-Realm }
+//   *[ Supported-Features ]
+//   [ User-Name ]
+//   [ MSISDN ]
+//   [ LMSI ]
+//   [ Serving-Node ]
+//   *[ Additional-Serving-Node ]
+//   [ GMLC-Address ]
+//   [ PPR-Address ]
+//   [ RIA-Flags ]
+//   *[ AVP ]
+//   [ Failed-AVP ]
+//   *[ Proxy-Info ]
+//   *[ Route-Record ]
+message LcsRoutingInfoAnswer {
+  option (diam.command) = {
+    code: 8388622
+    app_id: 16777291
+    proxiable: true
+  };
+  option (diam.extensible) = true;
+  string session_id = 1 [(diam.fixed) = true];
+  optional godiam.base.VendorSpecificApplicationId vendor_specific_application_id = 2;
+  optional uint32 result_code = 3;
+  optional godiam.base.ExperimentalResult experimental_result = 4;
+  godiam.base.AuthSessionState auth_session_state = 5;
+  string origin_host = 6;
+  string origin_realm = 7;
+  repeated godiam.s6a.SupportedFeatures supported_features = 8;
+  optional string user_name = 9;
+  optional bytes msisdn = 10;
+  optional bytes lmsi = 11;
+  optional ServingNode serving_node = 12;
+  repeated AdditionalServingNode additional_serving_node = 13;
+  optional bytes gmlc_address = 14;
+  optional bytes ppr_address = 15;
+  optional uint32 ria_flags = 16;
+  optional godiam.base.FailedAvp failed_avp = 17;
+  repeated godiam.base.ProxyInfo proxy_info = 18;
+  repeated string route_record = 19;
+}
+
+// Serving-Node (§6.4.3)
+//
+// Serving-Node ::= <AVP header: 2401 10415>
+//   [ SGSN-Number ]
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ MME-Name ]
+//   [ MME-Realm ]
+//   [ MSC-Number ]
+//   [ 3GPP-AAA-Server-Name ]
+//   [ LCS-Capabilities-Sets ]
+//   [ GMLC-Address ]
+//   *[AVP]
+message ServingNode {
+  option (diam.extensible) = true;
+  optional bytes sgsn_number = 1;
+  optional string sgsn_name = 2;
+  optional string sgsn_realm = 3;
+  optional string mme_name = 4;
+  optional string mme_realm = 5;
+  optional bytes msc_number = 6;
+  optional string tgpp_aaa_server_name = 7;
+  optional uint32 lcs_capabilities_sets = 8;
+  optional bytes gmlc_address = 9;
+}
+
+// Additional-Serving-Node (§6.4.8)
+//
+// Additional-Serving-Node ::= <AVP header: 2406 10415>
+//   [ SGSN-Number ]
+//   [ MME-Name ]
+//   [ SGSN-Name ]
+//   [ SGSN-Realm ]
+//   [ MME-Realm ]
+//   [ MSC-Number ]
+//   [ 3GPP-AAA-Server-Name ]
+//   [ LCS-Capabilities-Sets ]
+//   [ GMLC-Address ]
+//   *[AVP]
+message AdditionalServingNode {
+  option (diam.extensible) = true;
+  optional bytes sgsn_number = 1;
+  optional string mme_name = 2;
+  optional string sgsn_name = 3;
+  optional string sgsn_realm = 4;
+  optional string mme_realm = 5;
+  optional bytes msc_number = 6;
+  optional string tgpp_aaa_server_name = 7;
+  optional uint32 lcs_capabilities_sets = 8;
+  optional bytes gmlc_address = 9;
+}
