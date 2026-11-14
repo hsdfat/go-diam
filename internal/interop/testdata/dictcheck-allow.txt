@@ -36,3 +36,6 @@
 # SLh (proto/3gpp/ts29173/slh.proto, TS 29.173 V18.0.0): no disagreement.
 # Its GMLC-Address entry has the M-bit set (table 6.4.1/1), as go-diameter
 # does; the "2405 10415 m" line above is for the S6a entry only.
+#
+# Zh (proto/3gpp/ts29109/zh.proto, TS 29.109 V18.1.0): no disagreement; all
+# three of its own entries are absent from go-diameter.

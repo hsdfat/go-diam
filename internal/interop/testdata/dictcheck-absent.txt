@@ -278,3 +278,11 @@
 2409 10415 SGSN_NAME
 2410 10415 SGSN_REALM
 2411 10415 RIA_FLAGS
+
+# Zh, proto/3gpp/ts29109/zh.proto. go-diameter has no Zh application and
+# none of the GAA AVPs of TS 29.109 table 6.1. The Cx AVPs Zh uses
+# (Public-Identity, SIP-Auth-Data-Item and its members) are the Cx entries,
+# imported, and listed in the Cx section where go-diameter lacks them.
+400 10415 GBA_USERSECSETTINGS
+409 10415 GUSS_TIMESTAMP
+421 10415 SHA_256_INDICATION
