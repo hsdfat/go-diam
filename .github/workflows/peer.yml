@@ -43,7 +43,9 @@ jobs:
         if: always()
         with:
           name: captures-base
-          path: testdata/captures/base/
+          path: |
+            testdata/captures/base/
+            testdata/deviations/base/
           if-no-files-found: error
 
   open5gs:
@@ -113,7 +115,9 @@ jobs:
         if: always()
         with:
           name: captures-s6a
-          path: testdata/captures/s6a/
+          path: |
+            testdata/captures/s6a/
+            testdata/deviations/s6a/
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()

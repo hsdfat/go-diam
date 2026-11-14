@@ -30,6 +30,8 @@ type peerConn struct {
 	host, realm string // our identity
 	id          uint32 // last Hop-by-Hop and End-to-End identifier used
 	dir         string // capture directory written with -update
+	devDir      string // deviation directory written with -update
+	deviations  bool   // a frame was written to devDir
 }
 
 // dialPeer connects to the peer at the address in the environment variable
@@ -48,7 +50,8 @@ func dialPeer(t *testing.T, env, host, realm, dir string) *peerConn {
 	if err := conn.SetDeadline(time.Now().Add(60 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	p := &peerConn{t: t, conn: conn, host: host, realm: realm, dir: filepath.Join(capturesDir, dir)}
+	p := &peerConn{t: t, conn: conn, host: host, realm: realm,
+		dir: filepath.Join(capturesDir, dir), devDir: filepath.Join(deviationsDir, dir)}
 	if *update {
 		if err := os.MkdirAll(p.dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -183,7 +186,31 @@ func (p *peerConn) probe(name string, req diam.Message) diam.Message {
 	return m
 }
 
-// writeSource writes the SOURCE file of the capture directory.
+// deviant sends req and saves the answer, with -update, in the deviation
+// directory instead of the captures: TestDeviations replays it there (see
+// docs/design.md §14). The replay result is logged, not checked.
+func (p *peerConn) deviant(name string, req diam.Message) diam.Message {
+	p.t.Helper()
+	frame := p.answer(p.send(req))
+	p.t.Logf("%s (deviation): %d bytes: %x", name, len(frame), frame)
+	if *update {
+		if err := os.MkdirAll(p.devDir, 0o755); err != nil {
+			p.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p.devDir, name+".bin"), frame, 0o644); err != nil {
+			p.t.Fatal(err)
+		}
+		p.deviations = true
+	}
+	m, err := replay(frame)
+	if err != nil {
+		p.t.Logf("%s (deviation): %v", name, err)
+	}
+	return m
+}
+
+// writeSource writes the SOURCE file of the capture directory, and of the
+// deviation directory when deviant wrote to it.
 func (p *peerConn) writeSource(text string) {
 	p.t.Helper()
 	if !*update {
@@ -191,6 +218,11 @@ func (p *peerConn) writeSource(text string) {
 	}
 	if err := os.WriteFile(filepath.Join(p.dir, "SOURCE"), []byte(text), 0o644); err != nil {
 		p.t.Fatal(err)
+	}
+	if p.deviations {
+		if err := os.WriteFile(filepath.Join(p.devDir, "SOURCE"), []byte(text), 0o644); err != nil {
+			p.t.Fatal(err)
+		}
 	}
 }
 
@@ -233,7 +265,7 @@ func TestPeer(t *testing.T) {
 	// freeDiameter has no application behind RAR, STR and ASR, so it answers
 	// each with a protocol error (E bit, 3007). It clears the P bit in those
 	// answers, where RFC 6733 §6.2 and §7.2 say the P bit is the request's,
-	// so they are probed here but not committed: see docs/design.md.
+	// so they are kept as deviations, not captures: see docs/design.md §14.
 	for _, req := range []struct {
 		name string
 		m    diam.Message
@@ -253,7 +285,7 @@ func TestPeer(t *testing.T) {
 			ReAuthRequestType: base.ReAuthRequestTypeAuthorizeOnly,
 		}},
 	} {
-		p.probe(req.name, req.m)
+		p.deviant(req.name, req.m)
 	}
 
 	if dpa, ok := p.exchange("dpa", &base.DisconnectPeerRequest{
@@ -270,6 +302,8 @@ Image:    ci/freediameter/Dockerfile (Debian bookworm package "freediameter")
 Date:     %s
 Command:  go test -tags peer -run 'TestPeer$' -update ./internal/interop/
 
-Generated in CI against freeDiameter; no operator traffic.
+Generated in CI against freeDiameter; no operator traffic. In
+testdata/deviations/base, sta.bin, asa.bin and raa.bin are freeDiameter's
+3007 error answers to an STR, ASR and RAR, with the P bit cleared.
 `, cea.OriginHost, cea.ProductName, cea.FirmwareRevision.V, time.Now().UTC().Format("2006-01-02")))
 }

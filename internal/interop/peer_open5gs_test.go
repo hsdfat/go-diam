@@ -194,7 +194,9 @@ func TestPeerS6a(t *testing.T) {
 		t.Logf("PUA: %s", resultOf(pua.ResultCode, pua.ExperimentalResult))
 	}
 
-	if noa, ok := p2.probe("noa", &s6a.NotifyRequest{
+	// Open5GS answers NOR with 3001 (E bit) and clears the P bit: kept as a
+	// deviation (docs/design.md §14).
+	if noa, ok := p2.deviant("noa", &s6a.NotifyRequest{
 		Header: p2.next(), SessionId: p2.sessionID(), VendorSpecificApplicationId: vsai(),
 		AuthSessionState: base.AuthSessionStateNoStateMaintained,
 		OriginHost:       p2.host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
@@ -204,11 +206,13 @@ func TestPeerS6a(t *testing.T) {
 		t.Logf("NOA: %s, flags %#x", resultOf(noa.ResultCode, noa.ExperimentalResult), noa.Header.Flags)
 	}
 
+	p.deviations = p2.deviations
 	p.writeSource(open5gsSource(cea, "TestPeerS6a",
 		"cea.bin (CEA), aia.bin (AIA, one E-UTRAN vector), ula.bin (ULA with\n"+
 			"          Subscription-Data), aia-user-unknown.bin (AIA, Experimental-Result\n"+
 			"          5001), clr.bin (CLR the HSS sent to the first MME after a second\n"+
-			"          MME's ULR), pua.bin (PUA)"))
+			"          MME's ULR), pua.bin (PUA). In testdata/deviations/s6a,\n"+
+			"          noa.bin is the 3001 error answer to a NOR, with the P bit cleared."))
 }
 
 // TestPeerCx acts as an I-CSCF and S-CSCF towards the Open5GS HSS at
@@ -307,16 +311,37 @@ func TestPeerSWx(t *testing.T) {
 	hss := string(cea.OriginHost)
 	vsai := base.VendorSpecificApplicationId{VendorId: tgpp, AuthApplicationId: diam.Some(uint32(swxApp))}
 
-	if maa, ok := p.exchange("maa", &swx.MultimediaAuthRequest{
-		Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
-		AuthSessionState: base.AuthSessionStateNoStateMaintained,
-		OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
-		UserName:           hssIMSI,
-		RatType:            diam.Some(s6a.RatTypeWlan),
-		Anid:               diam.Some("WLAN"), // TS 24.302 §8.1.1.2: ANID of a WLAN
-		SipAuthDataItem:    swx.SipAuthDataItem{SipAuthenticationScheme: diam.Some("EAP-AKA'")},
-		SipNumberAuthItems: 1,
-	}).(*swx.MultimediaAuthAnswer); ok {
+	mar := func(scheme string, anid diam.Opt[string]) *swx.MultimediaAuthRequest {
+		return &swx.MultimediaAuthRequest{
+			Header: p.next(), SessionId: p.sessionID(), VendorSpecificApplicationId: vsai,
+			AuthSessionState: base.AuthSessionStateNoStateMaintained,
+			OriginHost:       host, OriginRealm: realm, DestinationHost: diam.Some(hss), DestinationRealm: realm,
+			UserName:           hssIMSI,
+			RatType:            diam.Some(s6a.RatTypeWlan),
+			Anid:               anid,
+			SipAuthDataItem:    swx.SipAuthDataItem{SipAuthenticationScheme: diam.Some(scheme)},
+			SipNumberAuthItems: 1,
+		}
+	}
+	// TS 29.273 §8.1.2.1: the method is EAP-AKA or EAP-AKA' (TS 33.402), and
+	// ANID (TS 24.302 §8.1.1.2, "WLAN" for a WLAN) comes with EAP-AKA'. The
+	// first run of the HSS answered "EAP-AKA'" with 5006, so the scheme
+	// strings are probed first.
+	type method struct {
+		scheme string
+		anid   diam.Opt[string]
+	}
+	use := method{"EAP-AKA'", diam.Some("WLAN")}
+	for i, c := range []method{use, {"EAP-AKA", diam.Opt[string]{}}, {"EAP-AKA'", diam.Opt[string]{}}, {"Digest-AKAv1-MD5", diam.Opt[string]{}}} {
+		if maa, ok := p.probe(fmt.Sprintf("maa-candidate-%d", i), mar(c.scheme, c.anid)).(*swx.MultimediaAuthAnswer); ok {
+			t.Logf("MAA for scheme %q, ANID %v: %s", c.scheme, c.anid, resultOf(maa.ResultCode, maa.ExperimentalResult))
+			if success(maa.ResultCode, maa.ExperimentalResult) {
+				use = c
+				break
+			}
+		}
+	}
+	if maa, ok := p.exchange("maa", mar(use.scheme, use.anid)).(*swx.MultimediaAuthAnswer); ok {
 		t.Logf("MAA: %s, %d SIP-Auth-Data-Item", resultOf(maa.ResultCode, maa.ExperimentalResult), len(maa.SipAuthDataItem))
 		if !success(maa.ResultCode, maa.ExperimentalResult) || len(maa.SipAuthDataItem) == 0 {
 			t.Errorf("MAA: no SIP-Auth-Data-Item: %s", resultOf(maa.ResultCode, maa.ExperimentalResult))
@@ -337,6 +362,6 @@ func TestPeerSWx(t *testing.T) {
 	}
 
 	p.writeSource(open5gsSource(cea, "TestPeerSWx",
-		"cea.bin (CEA), maa.bin (MAA, EAP-AKA'), saa.bin (SAA), for User-Name\n"+
-			"          \""+hssIMSI+"\""))
+		fmt.Sprintf("cea.bin (CEA), maa.bin (MAA, scheme %q), saa.bin (SAA), for\n"+
+			"          User-Name %q", use.scheme, hssIMSI)))
 }
