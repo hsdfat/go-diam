@@ -2364,7 +2364,7 @@ func (m *MultimediaAuthAnswer) Unmarshal(b []byte) error {
 //	…
 //	*[ AVP ]
 //
-// No PXY: see the file header.
+// Proxiable although the header above has no PXY: see the file header.
 type PushProfileRequest struct {
 	Header diam.Header
 
@@ -2681,7 +2681,7 @@ func (m *PushProfileRequest) DiamHeader() *diam.Header { return &m.Header }
 func (m *PushProfileRequest) AppendMarshal(b []byte) ([]byte, error) {
 	h := m.Header
 	h.CommandCode, h.AppID = 305, 16777265
-	h.Flags = h.Flags&^(diam.FlagRequest|diam.FlagProxiable) | diam.FlagRequest
+	h.Flags = h.Flags&^(diam.FlagRequest|diam.FlagProxiable) | diam.FlagRequest | diam.FlagProxiable
 	start := len(b)
 	b = diam.AppendHeader(b, &h)
 	b = m.AppendAVPs(b)

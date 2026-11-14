@@ -340,15 +340,21 @@ func TestIdentityUnknown(t *testing.T) {
 	}
 }
 
-// The Zh MAA grammar has no Failed-AVP: one in a Zh MAA is an AVP the
-// command does not define, with the M-bit, so Validate reports 5001.
-func TestNoFailedAVP(t *testing.T) {
+// The Zh MAA grammar has no Failed-AVP; go-diam adds [ Failed-AVP ], so an
+// answer that carries one decodes into the field and passes Validate.
+func TestFailedAVP(t *testing.T) {
 	maa := samples()[1].(*MultimediaAuthAnswer)
-	failed := (&base.FailedAvp{Unknown: []diam.RawAVP{{Code: base.AVPOriginStateId, Flags: diam.AVPFlagMandatory, Data: []byte{0, 0, 0, 9}}}}).AppendAVPs(nil)
-	maa.Unknown = []diam.RawAVP{{Code: base.AVPFailedAvp, Flags: diam.AVPFlagMandatory, Data: failed}}
-	ae := wantResult(t, decode(t, encode(t, maa)).Validate(), diam.ResultAVPUnsupported)
-	if ae.AVP.Code != base.AVPFailedAvp {
-		t.Fatalf("AVP = %+v", ae.AVP)
+	inner := diam.RawAVP{Code: base.AVPOriginStateId, Flags: diam.AVPFlagMandatory, Data: []byte{0, 0, 0, 9}}
+	maa.FailedAvp = &base.FailedAvp{Unknown: []diam.RawAVP{inner}}
+	got := decode(t, encode(t, maa)).(*MultimediaAuthAnswer)
+	if err := got.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got.FailedAvp == nil || len(got.FailedAvp.Unknown) != 1 || got.FailedAvp.Unknown[0].Code != base.AVPOriginStateId {
+		t.Fatalf("Failed-AVP = %+v", got.FailedAvp)
+	}
+	if len(got.Unknown) != 0 {
+		t.Fatalf("Unknown = %+v", got.Unknown)
 	}
 }
 

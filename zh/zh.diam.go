@@ -410,6 +410,8 @@ func (m *MultimediaAuthRequest) Unmarshal(b []byte) error {
 //	*[ AVP ]
 //	*[ Proxy-Info ]
 //	*[ Route-Record ]
+//
+// [ Failed-AVP ] is not in the grammar above: see the file header.
 type MultimediaAuthAnswer struct {
 	Header diam.Header
 
@@ -425,6 +427,7 @@ type MultimediaAuthAnswer struct {
 	SipAuthDataItem             *cx.SipAuthDataItem              // [ ] SIP_AUTH_DATA_ITEM code 612 vendor 10415
 	GbaUserSecSettings          diam.Opt[[]byte]                 // [ ] GBA_USERSECSETTINGS code 400 vendor 10415
 	Sha256Indication            diam.Opt[Sha256Indication]       // [ ] SHA_256_INDICATION code 421 vendor 10415
+	FailedAvp                   *base.FailedAvp                  // [ ] FAILED_AVP code 279
 	ProxyInfo                   []base.ProxyInfo                 // *[ ] PROXY_INFO code 284
 	RouteRecord                 []string                         // *[ ] ROUTE_RECORD code 282
 
@@ -490,6 +493,11 @@ func (m *MultimediaAuthAnswer) AppendAVPs(b []byte) []byte {
 	if m.Sha256Indication.Set {
 		b, s = diam.BeginAVP(b, 421, diam.AVPFlagMandatory, 10415)
 		b = diam.AppendInteger32(b, int32(m.Sha256Indication.V))
+		b = diam.EndAVP(b, s)
+	}
+	if m.FailedAvp != nil {
+		b, s = diam.BeginAVP(b, 279, diam.AVPFlagMandatory, 0)
+		b = m.FailedAvp.AppendAVPs(b)
 		b = diam.EndAVP(b, s)
 	}
 	for i := range m.ProxyInfo {
@@ -678,6 +686,21 @@ func (m *MultimediaAuthAnswer) DecodeAVPs(data []byte) error {
 				continue
 			}
 			m.Sha256Indication = diam.Some(Sha256Indication(v))
+		case 279: // FAILED_AVP code 279
+			if m.FailedAvp != nil {
+				if m.excess == nil {
+					m.excess = diam.TooMany(diam.Clone(a), "FAILED_AVP")
+				}
+				continue
+			}
+			var v base.FailedAvp
+			if err := v.DecodeAVPs(a.Data); err != nil {
+				if m.decodeErr == nil {
+					m.decodeErr = &diam.AVPError{ResultCode: diam.ResultInvalidAVPLength, AVP: diam.Clone(a), Msg: "malformed grouped AVP FAILED_AVP"}
+				}
+				continue
+			}
+			m.FailedAvp = &v
 		case 284: // PROXY_INFO code 284
 			var v base.ProxyInfo
 			if err := v.DecodeAVPs(a.Data); err != nil {
@@ -736,6 +759,11 @@ func (m *MultimediaAuthAnswer) Validate() error {
 	if m.SipAuthDataItem != nil {
 		if err := m.SipAuthDataItem.Validate(); err != nil {
 			return diam.InGroup(err, 612)
+		}
+	}
+	if m.FailedAvp != nil {
+		if err := m.FailedAvp.Validate(); err != nil {
+			return diam.InGroup(err, 279)
 		}
 	}
 	for i := range m.ProxyInfo {

@@ -197,7 +197,9 @@ func swxPairs() []pair {
 			b.a(avp.FeatureListID, tgpp, datatype.Unsigned32(1)), b.a(avp.FeatureList, tgpp, datatype.Unsigned32(0x7f)))
 	}
 	gOcSF := &cx.OcSupportedFeatures{OcFeatureVector: diam.Some(uint64(1))}
-	fOcSF := func() *fd.AVP { return s.g(avp.OCSupportedFeatures, 0, s.a(avp.OCFeatureVector, 0, datatype.Unsigned64(1))) }
+	fOcSF := func() *fd.AVP {
+		return s.g(avp.OCSupportedFeatures, 0, s.a(avp.OCFeatureVector, 0, datatype.Unsigned64(1)))
+	}
 	gOlr := &cx.OcOlr{OcSequenceNumber: 9, OcReportType: cx.OcReportTypeRealmReport,
 		OcReductionPercentage: diam.Some(uint32(50)), OcValidityDuration: diam.Some(uint32(30))}
 	fOlr := func() *fd.AVP {
@@ -335,7 +337,7 @@ func swxPairs() []pair {
 				Non3GppUserData: &swx.Non3GppUserData{TraceInfo: &swx.TraceInfo{TraceReference: diam.Some(traceRef)}},
 				PprFlags:        diam.Some(uint32(0xf)), SupportedFeatures: gFeatures,
 			},
-			fswx(305, req, session("hss;1;2"), drmp(), fVSA(), authState(), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
+			fswx(305, req|pxy, session("hss;1;2"), drmp(), fVSA(), authState(), ident(avp.OriginHost, hss), ident(avp.OriginRealm, realm),
 				ident(avp.DestinationHost, aaa), ident(avp.DestinationRealm, realm), utf8(avp.UserName, nai),
 				q.g(avp.Non3GPPUserData, tgpp, q.g(avp.TraceInfo, tgpp, q.a(avp.TraceReference, tgpp, datatype.OctetString(traceRef)))),
 				q.r("PPR-Flags", datatype.Unsigned32(0xf)), fFeatures(q)),

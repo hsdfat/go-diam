@@ -593,10 +593,10 @@ The text above is unchanged; these win.
   go-diameter, so the dictionary cross-check covers only the imported Cx
   entries. No benchmark.
 - **§5.2, an answer grammar without Failed-AVP (Zh).** The Zh MAA (§4.2
-  step 3) lists no Failed-AVP. It is transcribed as written, so a
-  Failed-AVP in a Zh MAA is an AVP the command does not define and, having
-  the M-bit, fails `Validate` with 5001. A receiver that wants to read one
-  takes it from `Unknown`.
+  step 3) lists no Failed-AVP. `zh.proto` adds `[ Failed-AVP ]`, a
+  deviation from the text: RFC 6733 §7.5 has a peer put the AVP in an
+  answer that reports an AVP error, and transcribed as written such an
+  answer would fail `Validate` with 5001.
 - **§7, procedure rules are not grammar (Zh).** §4.2 wants User-Name or
   Public-Identity in a request (only User-Name outside push) and both in
   the answer to a request with Public-Identity. The grammars have both
@@ -626,8 +626,10 @@ The text above is unchanged; these win.
   AVP it understands, and an AVP without the M-bit is never rejected. At
   the top level of MAR and SAR the SWx entry (M set) applies.
 - **SWx header and table readings.** The PPR header is "305, REQ" without
-  PXY in V18.6.0 and V8.16.0 alike, while PPA has PXY; both are transcribed
-  as written. Table 8.2.3.0/1 gives Access-Network-Info code 1524 (SSID's
+  PXY in V18.6.0 and V8.16.0 alike, while PPA has PXY. The missing PXY is
+  read as an editorial omission and PPR is proxiable, a deviation from the
+  text: RFC 6733 §6.2 has an answer carry the P-bit of its request, and the
+  Cx PPR has PXY. Table 8.2.3.0/1 gives Access-Network-Info code 1524 (SSID's
   code); clause 5.2.3.24 and table 5.2.3.1/1 give 1526, which is used.
   AN-Trusted is V with M clear in the SWx table and M,V in the STa table;
   the SWx table is used. RAT-Type has the TS 29.212 rule (M clear), not the

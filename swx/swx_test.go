@@ -123,7 +123,7 @@ var commands = []struct {
 	proxiable bool
 }{
 	{303, true}, {303, true}, // MAR, MAA
-	{305, false}, {305, true}, // PPR "305, REQ" (no PXY), PPA "305, PXY"
+	{305, true}, {305, true}, // PPR "305, REQ" read as proxiable (see swx.proto), PPA "305, PXY"
 	{301, true}, {301, true}, // SAR, SAA
 	{304, true}, {304, true}, // RTR, RTA
 }
@@ -595,9 +595,9 @@ func TestNewAnswerFor(t *testing.T) {
 	maa := NewMultimediaAuthAnswerFor(mar)
 	check("MAA", maa.Header, diam.FlagProxiable, maa.SessionId, mar.SessionId)
 	ppr := samples()[2].(*PushProfileRequest)
-	ppr.Header.Flags = diam.FlagRequest
+	ppr.Header.Flags = all
 	ppa := NewPushProfileAnswerFor(ppr)
-	check("PPA", ppa.Header, 0, ppa.SessionId, ppr.SessionId)
+	check("PPA", ppa.Header, diam.FlagProxiable, ppa.SessionId, ppr.SessionId)
 	sar := samples()[4].(*ServerAssignmentRequest)
 	sar.Header.Flags = all
 	saa := NewServerAssignmentAnswerFor(sar)

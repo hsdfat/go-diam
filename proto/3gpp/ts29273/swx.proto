@@ -65,8 +65,10 @@
 //     5.3.0.1 says V, M should not; it is sent with the M-bit clear. S6a sets
 //     it (TS 29.272 table 7.3.1/2), so the S6a entry is not used.
 //   - Push-Profile-Request: the header is "305, REQ" without PXY in
-//     V18.6.0 and in V8.16.0, while PPA has PXY. Both are transcribed as
-//     written: PPR is sent with the P-bit clear, PPA with it set.
+//     V18.6.0 and in V8.16.0, while PPA has PXY. The missing PXY is read as
+//     an editorial omission and PPR is proxiable here, a deviation from the
+//     text: RFC 6733 §6.2 has an answer carry the P-bit of its request, and
+//     the Cx PPR (TS 29.229 §6.1.11) has PXY.
 //   - MAA and SAA write "[ OC-OLR ] ]"; read as [ OC-OLR ].
 //   - MAR lists { Destination-Realm } before [ Destination-Host ]; that
 //     order is kept, and it is the order go-diam encodes.
@@ -488,12 +490,13 @@ message MultimediaAuthAnswer {
 //   …
 //   *[ AVP ]
 //
-// No PXY: see the file header.
+// Proxiable although the header above has no PXY: see the file header.
 message PushProfileRequest {
   option (diam.command) = {
     code: 305
     app_id: 16777265
     request: true
+    proxiable: true
   };
   option (diam.extensible) = true;
   string session_id = 1 [(diam.fixed) = true];

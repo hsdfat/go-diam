@@ -35,10 +35,10 @@
 //   - Vendor-Specific-Application-Id is { } in both commands (§6.1 keeps it
 //     required for backward compatibility); MAR lists Destination-Realm
 //     before Destination-Host. Both are kept as written.
-//   - The Zh MAA grammar has no Failed-AVP. It is transcribed as written: a
-//     Failed-AVP in a Zh MAA is an unknown AVP with the M-bit, which
-//     Validate reports with 5001, as RFC 6733 §4.1 has it for an AVP the
-//     command does not define.
+//   - The Zh MAA grammar has no Failed-AVP. [ Failed-AVP ] is added here,
+//     a deviation from the text: RFC 6733 §7.5 has a peer put the AVP in an
+//     answer that reports an AVP error, and without it such an answer would
+//     fail Validate with 5001.
 //   - §7.1 lists the re-used AVPs as "Authentication-Session-State,
 //     User-Name, Public-User-Identity and SIP-Auth-Data-Item"; the grammars
 //     and TS 29.229 name them Auth-Session-State and Public-Identity, which
@@ -143,6 +143,8 @@ message MultimediaAuthRequest {
 //   *[ AVP ]
 //   *[ Proxy-Info ]
 //   *[ Route-Record ]
+//
+// [ Failed-AVP ] is not in the grammar above: see the file header.
 message MultimediaAuthAnswer {
   option (diam.command) = {
     code: 303
@@ -162,6 +164,7 @@ message MultimediaAuthAnswer {
   optional godiam.cx.SipAuthDataItem sip_auth_data_item = 10;
   optional bytes gba_user_sec_settings = 11 [(diam.avp) = "GBA_USERSECSETTINGS"];
   optional Sha256Indication sha256_indication = 12 [(diam.avp) = "SHA_256_INDICATION"];
-  repeated godiam.base.ProxyInfo proxy_info = 13;
-  repeated string route_record = 14;
+  optional godiam.base.FailedAvp failed_avp = 13;
+  repeated godiam.base.ProxyInfo proxy_info = 14;
+  repeated string route_record = 15;
 }
