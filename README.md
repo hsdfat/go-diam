@@ -28,8 +28,9 @@ b, err := ulr.Marshal()
 > (`s6a`, `s13`), Cx/Dx from TS 29.229 (`cx`) and Sh/Dh from TS 29.329
 > (`sh`), each tested in both directions against fiorix/go-diameter (for Cx
 > and Sh, which go-diameter has no dictionary for, AVP by AVP; see
-> [Coverage](#coverage)). No capture from a real peer is committed yet, so
-> all five are *spec-only*. The API may still change before `v1.0.0`.
+> [Coverage](#coverage)). Captures from freeDiameter are committed for three
+> of the six base command pairs (CEA, DWA, DPA) and none for the 3GPP
+> applications, so all five are still *spec-only*. The API may still change before `v1.0.0`.
 
 The same with the base protocol:
 
@@ -341,7 +342,7 @@ Statuses:
 
 | Application | Spec | Wave | Status |
 |---|---|---|---|
-| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; freeDiameter captures pending (the `peer` workflow produces them) |
+| Base protocol (CER/CEA, DWR/DWA, DPR/DPA, RAR/RAA, STR/STA, ASR/ASA) | RFC 6733 | 0 | spec-only: all 12 commands byte-identical with go-diameter in both directions, dictionary cross-checked, fuzzed; CEA, DWA and DPA captured from freeDiameter and replayed (`testdata/captures/base`), no capture for RAR/RAA, STR/STA, ASR/ASA |
 | S6a/S6d (ULR/ULA, AIR/AIA, CLR/CLA, IDR/IDA, DSR/DSA, PUR/PUA, RSR/RSA, NOR/NOA) | TS 29.272 V18.7.0 | 1 | spec-only: all 16 commands byte-identical with go-diameter in both directions (on the AVPs go-diameter knows), full Subscription-Data, fuzzed; 146 of 314 dictionary entries cross-checked, the 168 go-diameter lacks are listed in `internal/interop/testdata/dictcheck-absent.txt`; no peer capture yet |
 | Cx/Dx (UAR/UAA, SAR/SAA, LIR/LIA, MAR/MAA, RTR/RTA, PPR/PPA) | TS 29.229 V18.1.0 | 1 | spec-only: all 12 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands, fuzzed. go-diameter has no Cx application: its side is built from the Cx AVPs it defines under SWx, Ro/Rf, Rx, S6a, NASREQ and base, and decodes each AVP in the application that defines it; the 48 AVPs it defines nowhere (Public-Identity, Digest-*, the restoration and P-CSCF AVPs, ...) carry codes and flags restated from the spec in the test. 37 of 85 dictionary entries cross-checked, the 48 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Cx as opaque AVPs, not a like-for-like comparison); no peer capture yet |
 | Sh/Dh (UDR/UDA, PUR/PUA, SNR/SNA, PNR/PNA) | TS 29.329 V18.0.0 | 1 | spec-only: all 8 commands byte-identical with go-diameter in both directions, every grouped AVP of the commands and Wildcarded-IMPU, fuzzed. go-diameter has no Sh application: its side is built from the Sh AVPs it defines under Ro/Rf, Rx, SWx and base (MSISDN, Server-Name, Session-Priority, Supported-Features, DRMP, OC-\*, Load), and decodes each AVP in the application that defines it; the 26 AVPs it defines nowhere (User-Identity, User-Data, Data-Reference, Wildcarded-IMPU, External-Identifier, ...) carry codes and flags restated from the spec in the test. 18 of 45 dictionary entries cross-checked, the 27 others listed in `internal/interop/testdata/dictcheck-absent.txt`; no benchmark (go-diameter would decode Sh as opaque AVPs); no peer capture yet |
@@ -395,9 +396,9 @@ evidence:
 4. **Real captures.** Frames received from open-source peers running in CI
    (freeDiameter for the base protocol; Open5GS and PyHSS are planned for
    the 3GPP applications) are committed with their source and replayed: they
-   must decode, validate and re-encode to the same AVPs. No capture is
-   committed yet, which is why the base protocol is listed as spec-only; the
-   replay test is skipped until the first one is.
+   must decode, validate and re-encode to the same AVPs. Today that covers
+   CEA, DWA and DPA from freeDiameter; the base protocol stays spec-only
+   until the other three command pairs have a capture.
 5. **Fuzzing.** `Unmarshal` must never panic, and encoding a decoded message,
    decoding that and encoding again must give the same bytes. Every command
    has a fuzz target, and CI runs each for a short budget.
@@ -477,7 +478,7 @@ support work as usual.
 - **Wave 3:** S6b, SWm, STa, SLg, T6a/T6b, Np, Nt, NASREQ, EAP.
 
 Releases stay at `v0.x` until wave 1 is complete. The full design is in
-[`docs/superpowers/specs/2026-11-08-go-diam-design.md`](docs/superpowers/specs/2026-11-08-go-diam-design.md),
+[`docs/design.md`](docs/design.md),
 and [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to add an application.
 
 Out of scope: transport, peer state machines, routing and DRA logic,

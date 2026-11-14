@@ -1,0 +1,8 @@
+Frames received from a Diameter peer by internal/interop/peer_test.go.
+
+Peer:     peer.test (Product-Name "freeDiameter", Firmware-Revision 10201)
+Image:    ci/freediameter/Dockerfile (Debian bookworm package "freediameter")
+Date:     2026-11-12
+Command:  go test -tags peer -run TestPeer -update ./internal/interop/
+
+Generated in CI against freeDiameter; no operator traffic.
