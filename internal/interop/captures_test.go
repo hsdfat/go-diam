@@ -11,6 +11,7 @@ import (
 	"github.com/hsdfat/go-diam/diam"
 	"github.com/hsdfat/go-diam/internal/diamtest"
 	_ "github.com/hsdfat/go-diam/s6a" // registers the S6a/S6d commands
+	_ "github.com/hsdfat/go-diam/swx" // registers the SWx commands
 )
 
 // capturesDir holds frames received from real peers: one raw Diameter

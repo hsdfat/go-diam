@@ -94,42 +94,57 @@ func (p *peerConn) send(m diam.Message) uint32 {
 	return h.CommandCode
 }
 
-// answer reads frames until the answer to the given command arrives. A DWR
-// from the peer is answered; other requests from it are logged and skipped.
-func (p *peerConn) answer(code uint32) []byte {
-	p.t.Helper()
+// read returns the next frame from the peer for which want reports true.
+// A DWR from the peer is answered; other frames are logged and skipped. It
+// does not stop the test, so it may run in its own goroutine.
+func (p *peerConn) read(want func(diam.Header) bool) ([]byte, error) {
 	for {
 		frame, err := diam.ReadFrame(p.conn)
 		if err != nil {
-			p.t.Fatalf("reading the answer to command %d: %v", code, err)
+			return nil, err
 		}
 		h, _, err := diam.ParseHeader(frame)
 		if err != nil {
-			p.t.Fatal(err)
+			return nil, err
 		}
-		if h.CommandCode == code && h.Flags&diam.FlagRequest == 0 {
-			return frame
+		if want(h) {
+			return frame, nil
 		}
 		if h.CommandCode == 280 && h.Flags&diam.FlagRequest != 0 {
 			var dwr base.DeviceWatchdogRequest
 			if err := dwr.Unmarshal(frame); err != nil {
-				p.t.Fatal(err)
+				return nil, err
 			}
 			dwa := base.NewDeviceWatchdogAnswerFor(&dwr)
 			dwa.ResultCode, dwa.OriginHost, dwa.OriginRealm = 2001, p.host, p.realm
-			p.send(dwa)
+			b, err := dwa.AppendMarshal(nil)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := p.conn.Write(b); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		p.t.Logf("skipping command %d flags %#x from the peer: %x", h.CommandCode, h.Flags, frame)
 	}
 }
 
-// exchange sends req, reads the answer with the same command code, saves it
-// as name.bin with -update, and replays it as TestCaptures will. It returns
-// the decoded answer, or nil after reporting an error.
-func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
+// answer reads frames until the answer to the given command arrives.
+func (p *peerConn) answer(code uint32) []byte {
 	p.t.Helper()
-	frame := p.answer(p.send(req))
+	frame, err := p.read(func(h diam.Header) bool { return h.CommandCode == code && h.Flags&diam.FlagRequest == 0 })
+	if err != nil {
+		p.t.Fatalf("reading the answer to command %d: %v", code, err)
+	}
+	return frame
+}
+
+// check saves a frame received from the peer as name.bin with -update and
+// replays it as TestCaptures will. It returns the decoded message, or nil
+// after reporting an error.
+func (p *peerConn) check(name string, frame []byte) diam.Message {
+	p.t.Helper()
 	p.t.Logf("%s: %d bytes: %x", name, len(frame), frame)
 	if *update {
 		if err := os.WriteFile(filepath.Join(p.dir, name+".bin"), frame, 0o644); err != nil {
@@ -144,6 +159,14 @@ func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
 	out, _ := m.AppendMarshal(nil)
 	p.t.Logf("%s: decoded as %T; re-encoding byte-identical: %v", name, m, bytes.Equal(out, frame))
 	return m
+}
+
+// exchange sends req, reads the answer with the same command code, saves it
+// as name.bin with -update, and replays it as TestCaptures will. It returns
+// the decoded answer, or nil after reporting an error.
+func (p *peerConn) exchange(name string, req diam.Message) diam.Message {
+	p.t.Helper()
+	return p.check(name, p.answer(p.send(req)))
 }
 
 // probe sends req and reports on the answer like exchange, but only in the

@@ -1,6 +1,6 @@
 # Talks to independent open-source Diameter peers and publishes the frames
-# they sent as artifacts: the base protocol with freeDiameter, S6a and Cx
-# with the Open5GS HSS. A maintainer downloads an artifact and commits it
+# they sent as artifacts: the base protocol with freeDiameter, S6a, Cx and
+# SWx with the Open5GS HSS. A maintainer downloads an artifact and commits it
 # under testdata/captures/<dir>/, where TestCaptures replays it.
 name: peer
 
@@ -96,6 +96,14 @@ jobs:
           DIAM_PEER_SOFTWARE: Open5GS v2.8.0 open5gs-hssd, upstream commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, built from source
           DIAM_PEER_IMAGE: ci/open5gs/Dockerfile (ubuntu:noble-20261024.1), MongoDB ${{ env.MONGO_IMAGE }}
         run: go test -tags peer -run 'TestPeerCx$' -v . -update
+      - name: SWx with the HSS
+        if: success() || failure()
+        working-directory: internal/interop
+        env:
+          DIAM_HSS_ADDR: 127.0.0.1:3868
+          DIAM_PEER_SOFTWARE: Open5GS v2.8.0 open5gs-hssd, upstream commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, built from source
+          DIAM_PEER_IMAGE: ci/open5gs/Dockerfile (ubuntu:noble-20261024.1), MongoDB ${{ env.MONGO_IMAGE }}
+        run: go test -tags peer -run 'TestPeerSWx$' -v . -update
       - name: Peer log
         if: always()
         run: |
@@ -112,4 +120,10 @@ jobs:
         with:
           name: captures-cx
           path: testdata/captures/cx/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: captures-swx
+          path: testdata/captures/swx/
           if-no-files-found: warn
